@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Elenor light theme — cyan primary */
+    --background: 210 40% 98%;        /* #F8FAFC */
+    --foreground: 222 47% 11%;        /* #0F172A */
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 189 94% 43%;           /* #06B6D4 cyan */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 189 94% 94%;
+    --accent-foreground: 189 94% 30%;
+
+    --destructive: 0 84% 60%;         /* #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;           /* #22C55E */
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;            /* #F59E0B */
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 48%;              /* #0EA5E9 */
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 189 94% 43%;
+
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-accent: 189 94% 96%;
+
+    --radius: 0.875rem;               /* 14px */
+  }
+
+  .dark {
+    --background: 222 47% 7%;         /* deep slate */
+    --foreground: 210 40% 98%;
+
+    --card: 222 44% 10%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 44% 10%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 189 94% 48%;
+    --primary-foreground: 222 47% 8%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 189 60% 18%;
+    --accent-foreground: 189 94% 80%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 64% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 8%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 189 94% 48%;
+
+    --sidebar: 222 47% 9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 16%;
+    --sidebar-accent: 189 60% 14%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Slim, modern scrollbars */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(12px);
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
