@@ -1,17 +1,26 @@
 "use client";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   Mail, Phone, Calendar, Briefcase, Users, CheckSquare, Plane,
-  ShieldCheck, Award, AlertTriangle, FileText, Cake,
+  ShieldCheck, Award, AlertTriangle, FileText, Cake, Pencil, UserX, Loader2,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { ROLE_META } from "@/lib/rbac";
 import { WARNING_META } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { useCan } from "@/components/session-context";
+import { apiGet, apiSend } from "@/lib/fetcher";
+import { useCan, useSession } from "@/components/session-context";
 import { PermissionEditor } from "./permission-editor";
 
 type Employee = any;
@@ -20,10 +29,14 @@ const TABS = ["Overview", "Team", "Achievements", "Warnings", "Documents", "Acce
 
 export function EmployeeProfile({ employee }: { employee: Employee }) {
   const can = useCan();
+  const me = useSession();
   const [tab, setTab] = React.useState<(typeof TABS)[number]>("Overview");
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [deactivateOpen, setDeactivateOpen] = React.useState(false);
   const roleMeta = ROLE_META[employee.role.key as keyof typeof ROLE_META];
 
   const visibleTabs = TABS.filter((t) => t !== "Access" || can("Employee.EditPermissions"));
+  const isSelf = me.id === employee.id;
 
   return (
     <div>
@@ -42,11 +55,32 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
               </div>
               <p className="text-sm text-muted-foreground">{employee.jobTitle ?? roleMeta.name}</p>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              <Badge color="#06B6D4">{roleMeta.name}</Badge>
-              {employee.department && <Badge color={employee.department.color}>{employee.department.name}</Badge>}
-              {roleMeta.isSuperAdmin && (
-                <Badge color="#8B5CF6"><ShieldCheck className="size-3" /> Super Admin</Badge>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <Badge color="#06B6D4">{roleMeta.name}</Badge>
+                {employee.department && <Badge color={employee.department.color}>{employee.department.name}</Badge>}
+                {roleMeta.isSuperAdmin && (
+                  <Badge color="#8B5CF6"><ShieldCheck className="size-3" /> Super Admin</Badge>
+                )}
+              </div>
+              {(can("Employee.Edit") || can("Employee.Delete")) && (
+                <div className="flex gap-2">
+                  {can("Employee.Edit") && (
+                    <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                      <Pencil className="size-3.5" /> Edit
+                    </Button>
+                  )}
+                  {can("Employee.Delete") && !isSelf && employee.status !== "DEACTIVATED" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeactivateOpen(true)}
+                    >
+                      <UserX className="size-3.5" /> Deactivate
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -89,7 +123,138 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
           <PermissionEditor userId={employee.id} />
         )}
       </div>
+
+      {can("Employee.Edit") && (
+        <EditEmployeeDialog employee={employee} open={editOpen} onClose={() => setEditOpen(false)} />
+      )}
+      {can("Employee.Delete") && (
+        <DeactivateDialog employee={employee} open={deactivateOpen} onClose={() => setDeactivateOpen(false)} />
+      )}
     </div>
+  );
+}
+
+function EditEmployeeDialog({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const router = useRouter();
+  const [form, setForm] = React.useState({
+    firstName: employee.firstName,
+    lastName: employee.lastName,
+    jobTitle: employee.jobTitle ?? "",
+    phone: employee.phone ?? "",
+    roleKey: employee.role.key,
+    departmentId: employee.department?.id ?? employee.departmentId ?? "",
+    managerId: employee.manager?.id ?? employee.managerId ?? "",
+    status: employee.status,
+    annualLeaveBalance: employee.annualLeaveBalance,
+    sickLeaveBalance: employee.sickLeaveBalance,
+  });
+
+  const { data: deptData } = useQuery({
+    queryKey: ["departments"],
+    queryFn: () => apiGet<{ departments: { id: string; name: string }[] }>("/api/departments"),
+    enabled: open,
+  });
+  const { data: empData } = useQuery({
+    queryKey: ["employees"],
+    queryFn: () => apiGet<{ employees: any[] }>("/api/employees"),
+    enabled: open,
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiSend(`/api/employees/${employee.id}`, "PATCH", {
+        ...form,
+        annualLeaveBalance: Number(form.annualLeaveBalance),
+        sickLeaveBalance: Number(form.sickLeaveBalance),
+        departmentId: form.departmentId || null,
+        managerId: form.managerId || null,
+      }),
+    onSuccess: () => {
+      toast.success("Employee updated");
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      onClose();
+      router.refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Edit employee" className="max-w-xl">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label>First name</Label><Input value={form.firstName} onChange={(e) => set("firstName", e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Last name</Label><Input value={form.lastName} onChange={(e) => set("lastName", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label>Job title</Label><Input value={form.jobTitle} onChange={(e) => set("jobTitle", e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Phone</Label><Input value={form.phone} onChange={(e) => set("phone", e.target.value)} /></div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label>Role</Label>
+            <Select value={form.roleKey} onChange={(e) => set("roleKey", e.target.value)}>
+              {Object.entries(ROLE_META).map(([key, meta]) => <option key={key} value={key}>{meta.name}</option>)}
+            </Select>
+          </div>
+          <div className="space-y-1.5"><Label>Status</Label>
+            <Select value={form.status} onChange={(e) => set("status", e.target.value)}>
+              {["ACTIVE", "INVITED", "SUSPENDED", "OFFBOARDING", "DEACTIVATED"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label>Department</Label>
+            <Select value={form.departmentId} onChange={(e) => set("departmentId", e.target.value)}>
+              <option value="">None</option>
+              {deptData?.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </Select>
+          </div>
+          <div className="space-y-1.5"><Label>Manager</Label>
+            <Select value={form.managerId} onChange={(e) => set("managerId", e.target.value)}>
+              <option value="">None</option>
+              {empData?.employees.filter((e) => e.id !== employee.id).map((e) => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label>Annual leave (days)</Label><Input type="number" value={form.annualLeaveBalance} onChange={(e) => set("annualLeaveBalance", e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Sick leave (days)</Label><Input type="number" value={form.sickLeaveBalance} onChange={(e) => set("sickLeaveBalance", e.target.value)} /></div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />} Save changes
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function DeactivateDialog({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const router = useRouter();
+  const remove = useMutation({
+    mutationFn: () => apiSend(`/api/employees/${employee.id}`, "DELETE"),
+    onSuccess: () => {
+      toast.success("Employee deactivated");
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      onClose();
+      router.refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <Dialog open={open} onClose={onClose} title="Deactivate employee" description={`${employee.firstName} ${employee.lastName} will lose access immediately. Their tasks and history are preserved.`}>
+      <div className="flex justify-end gap-2 pt-2">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button className="bg-destructive hover:bg-destructive/90" onClick={() => remove.mutate()} disabled={remove.isPending}>
+          {remove.isPending && <Loader2 className="size-4 animate-spin" />} Deactivate
+        </Button>
+      </div>
+    </Dialog>
   );
 }
 
