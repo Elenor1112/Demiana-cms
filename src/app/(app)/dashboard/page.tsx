@@ -1,5 +1,6 @@
 import { PageContainer, PageHeader } from "@/components/shell/page-header";
 import { getSessionUser } from "@/lib/auth";
+import { DashboardClient } from "./dashboard-client";
 
 export default async function DashboardPage() {
   const user = await getSessionUser();
@@ -9,7 +10,9 @@ export default async function DashboardPage() {
         title={`Welcome back, ${user?.firstName ?? ""} 👋`}
         description="Here's what's happening across Elenor today."
       />
-      <div className="mt-6 text-sm text-muted-foreground">Dashboard coming up next…</div>
+      <div className="mt-6">
+        <DashboardClient />
+      </div>
     </PageContainer>
   );
 }
