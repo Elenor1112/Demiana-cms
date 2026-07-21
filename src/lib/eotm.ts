@@ -36,38 +36,34 @@ export async function computeScores(period: string): Promise<ScoreBreakdown[]> {
     select: { id: true },
   });
 
-  const results: ScoreBreakdown[] = [];
+  // Compute each user's score. Metric queries for a user run in parallel, but
+  // users are processed in small batches so we never exhaust the connection
+  // pool (serverless Postgres keeps a small pool). This balances speed against
+  // pool limits — far faster than fully sequential, safe under `connection_limit`.
+  const scoreOne = async (u: { id: string }): Promise<ScoreBreakdown> => {
+    const [assigned, completed, doneTasks, reviews, attendanceRows, comments, created, achievements] =
+      await Promise.all([
+        db.task.count({ where: { assignees: { some: { userId: u.id } }, createdAt: { lt: end } } }),
+        db.task.count({ where: { assignees: { some: { userId: u.id } }, status: "DONE", updatedAt: { gte: start, lt: end } } }),
+        db.task.findMany({ where: { assignees: { some: { userId: u.id } }, status: "DONE", updatedAt: { gte: start, lt: end } }, select: { deadline: true, updatedAt: true } }),
+        db.performanceReview.findMany({ where: { subjectId: u.id, period }, select: { qualityScore: true } }),
+        db.attendance.findMany({ where: { userId: u.id, date: { gte: start, lt: end } }, select: { status: true, late: true } }),
+        db.comment.count({ where: { authorId: u.id, createdAt: { gte: start, lt: end } } }),
+        db.task.count({ where: { createdById: u.id, createdAt: { gte: start, lt: end } } }),
+        db.achievement.count({ where: { userId: u.id, awardedAt: { gte: start, lt: end } } }),
+      ]);
 
-  for (const u of users) {
     // task completion rate
-    const assigned = await db.task.count({
-      where: { assignees: { some: { userId: u.id } }, createdAt: { lt: end } },
-    });
-    const completed = await db.task.count({
-      where: { assignees: { some: { userId: u.id } }, status: "DONE", updatedAt: { gte: start, lt: end } },
-    });
     const taskCompletion = assigned ? Math.min(100, (completed / assigned) * 100) : 0;
 
     // deadline adherence: done tasks completed on/before deadline
-    const doneTasks = await db.task.findMany({
-      where: { assignees: { some: { userId: u.id } }, status: "DONE", updatedAt: { gte: start, lt: end } },
-      select: { deadline: true, updatedAt: true },
-    });
     const onTime = doneTasks.filter((t) => !t.deadline || t.updatedAt <= t.deadline).length;
     const deadline = doneTasks.length ? (onTime / doneTasks.length) * 100 : (completed ? 100 : 0);
 
     // quality: average manager review score for the period
-    const reviews = await db.performanceReview.findMany({
-      where: { subjectId: u.id, period },
-      select: { qualityScore: true },
-    });
     const quality = reviews.length ? reviews.reduce((s, r) => s + r.qualityScore, 0) / reviews.length : 70;
 
     // attendance & punctuality
-    const attendanceRows = await db.attendance.findMany({
-      where: { userId: u.id, date: { gte: start, lt: end } },
-      select: { status: true, late: true },
-    });
     let attendance = 90;
     if (attendanceRows.length) {
       const present = attendanceRows.filter((a) => a.status === "present" || a.status === "remote").length;
@@ -75,13 +71,10 @@ export async function computeScores(period: string): Promise<ScoreBreakdown[]> {
       attendance = Math.max(0, (present / attendanceRows.length) * 100 - late * 5);
     }
 
-    // collaboration: comments authored + tasks with co-assignees (peer signal)
-    const comments = await db.comment.count({ where: { authorId: u.id, createdAt: { gte: start, lt: end } } });
+    // collaboration: comments authored (peer signal)
     const collaboration = Math.min(100, comments * 8 + 40);
 
     // initiative: tasks the user created + achievements
-    const created = await db.task.count({ where: { createdById: u.id, createdAt: { gte: start, lt: end } } });
-    const achievements = await db.achievement.count({ where: { userId: u.id, awardedAt: { gte: start, lt: end } } });
     const initiative = Math.min(100, created * 10 + achievements * 20 + 30);
 
     const total =
@@ -94,7 +87,7 @@ export async function computeScores(period: string): Promise<ScoreBreakdown[]> {
       (cfg.taskCompletionWeight + cfg.deadlineWeight + cfg.qualityWeight +
         cfg.attendanceWeight + cfg.collaborationWeight + cfg.initiativeWeight);
 
-    results.push({
+    return {
       userId: u.id,
       taskCompletion: round(taskCompletion),
       deadline: round(deadline),
@@ -103,7 +96,16 @@ export async function computeScores(period: string): Promise<ScoreBreakdown[]> {
       collaboration: round(collaboration),
       initiative: round(initiative),
       total: round(total),
-    });
+    };
+  };
+
+  // bounded concurrency: 3 users at a time (≈ up to 24 concurrent queries,
+  // below any reasonable pool ceiling with headroom for other requests)
+  const results: ScoreBreakdown[] = [];
+  const BATCH = 3;
+  for (let i = 0; i < users.length; i += BATCH) {
+    const batch = users.slice(i, i + BATCH);
+    results.push(...(await Promise.all(batch.map(scoreOne))));
   }
 
   return results.sort((a, b) => b.total - a.total);
@@ -112,12 +114,16 @@ export async function computeScores(period: string): Promise<ScoreBreakdown[]> {
 /** Compute and persist scores + set (or refresh) the auto winner. */
 export async function recomputeAndStore(period: string) {
   const scores = await computeScores(period);
-  for (const s of scores) {
-    await db.eotmScore.upsert({
-      where: { userId_period: { userId: s.userId, period } },
-      update: s,
-      create: { period, ...s },
-    });
+  const BATCH = 4;
+  for (let i = 0; i < scores.length; i += BATCH) {
+    const batch = scores.slice(i, i + BATCH);
+    await Promise.all(batch.map((s) =>
+      db.eotmScore.upsert({
+        where: { userId_period: { userId: s.userId, period } },
+        update: s,
+        create: { period, ...s },
+      })
+    ));
   }
   // set auto winner unless an override exists
   const existing = await db.eotmWinner.findUnique({ where: { period } });
