@@ -158,8 +158,13 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Task.Approve",
     "Project.Create",
     "Project.Edit",
+    "Project.Delete",
     "Client.Create",
     "Client.Edit",
+    "Client.Delete",
+    // Can edit departments, but deleting one is an org-structure change that
+    // stays with the CEO / Operations Manager.
+    "Department.Edit",
     "Employee.Create",
     "Employee.Edit",
     "Employee.Delete",

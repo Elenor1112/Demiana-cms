@@ -7,8 +7,13 @@ export async function GET(req: NextRequest) {
   try {
     await requireUser();
     const q = req.nextUrl.searchParams.get("q")?.trim();
+    // Archived clients are hidden unless explicitly requested.
+    const includeArchived = req.nextUrl.searchParams.get("includeArchived") === "1";
+    const search = q
+      ? { OR: [{ company: { contains: q, mode: "insensitive" as const } }, { contactPerson: { contains: q, mode: "insensitive" as const } }, { industry: { contains: q, mode: "insensitive" as const } }] }
+      : {};
     const clients = await db.client.findMany({
-      where: q ? { OR: [{ company: { contains: q, mode: "insensitive" } }, { contactPerson: { contains: q, mode: "insensitive" } }, { industry: { contains: q, mode: "insensitive" } }] } : {},
+      where: includeArchived ? search : { ...search, status: { not: "ARCHIVED" as const } },
       include: { _count: { select: { projects: true, tasks: true } } },
       orderBy: { company: "asc" },
     });

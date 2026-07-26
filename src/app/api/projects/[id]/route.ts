@@ -76,3 +76,48 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return toErrorResponse(e);
   }
 }
+
+/**
+ * Delete a project.
+ *
+ * A project holding tasks is cancelled rather than destroyed: the task rows
+ * reference it without onDelete:Cascade, so a hard delete would be rejected by
+ * the database, and the work history is worth keeping either way.
+ */
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await requirePermission("Project.Delete");
+    const { id } = await params;
+
+    const project = await db.project.findUnique({
+      where: { id },
+      select: { id: true, name: true, status: true, _count: { select: { tasks: true } } },
+    });
+    if (!project) throw new ApiError(404, "Project not found");
+
+    if (project._count.tasks > 0) {
+      const updated = await db.project.update({
+        where: { id },
+        data: { status: "CANCELLED" },
+      });
+      await audit({
+        actorId: user.id, action: "project.cancel", entity: "project", entityId: id,
+        oldValue: { status: project.status }, newValue: { status: updated.status, taskCount: project._count.tasks },
+      });
+      return NextResponse.json({
+        ok: true, archived: true, project: updated,
+        message: `Project cancelled — it still has ${project._count.tasks} task(s).`,
+      });
+    }
+
+    await db.projectMember.deleteMany({ where: { projectId: id } });
+    await db.project.delete({ where: { id } });
+    await audit({
+      actorId: user.id, action: "project.delete", entity: "project", entityId: id,
+      oldValue: { name: project.name },
+    });
+    return NextResponse.json({ ok: true, archived: false });
+  } catch (e) {
+    return toErrorResponse(e);
+  }
+}

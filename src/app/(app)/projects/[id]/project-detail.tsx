@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarGroup } from "@/components/ui/avatar";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { formatDate } from "@/lib/utils";
+import { EditProjectButton } from "./edit-project-button";
 
 const PROJECT_STATUS: Record<string, string> = {
   PLANNING: "#64748B", ACTIVE: "#06B6D4", ON_HOLD: "#F59E0B", COMPLETED: "#22C55E", CANCELLED: "#EF4444",
@@ -33,9 +34,12 @@ export function ProjectDetail({ project }: { project: any }) {
               <span className="flex items-center gap-1.5"><CheckSquare className="size-4" /> {project.taskCount} tasks</span>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-primary">{project.progress}%</div>
-            <div className="text-xs text-muted-foreground">complete</div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="text-right">
+              <div className="text-3xl font-bold text-primary">{project.progress}%</div>
+              <div className="text-xs text-muted-foreground">complete</div>
+            </div>
+            <EditProjectButton project={project} />
           </div>
         </div>
         <Progress value={project.progress} className="mt-4 h-2.5" />

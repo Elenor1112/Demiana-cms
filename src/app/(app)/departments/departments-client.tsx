@@ -3,7 +3,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Plus, Users, CheckSquare, Loader2, Network } from "lucide-react";
+import { Plus, Users, CheckSquare, Loader2, Network, Pencil, Trash2 } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCan } from "@/components/session-context";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 
 type Dept = {
   id: string;
@@ -37,6 +38,20 @@ export function DepartmentsClient() {
   const { data, isLoading } = useQuery({
     queryKey: ["departments-full"],
     queryFn: () => apiGet<{ departments: Dept[] }>("/api/departments"),
+  });
+
+  const [editing, setEditing] = React.useState<Dept | null>(null);
+  const [deleting, setDeleting] = React.useState<Dept | null>(null);
+
+  const remove = useMutation({
+    mutationFn: (id: string) => apiSend<any>(`/api/departments/${id}`, "DELETE"),
+    onSuccess: (res: any) => {
+      toast.success(res?.message ?? "Department deleted");
+      qc.invalidateQueries({ queryKey: ["departments-full"] });
+      qc.invalidateQueries({ queryKey: ["departments"] });
+      setDeleting(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const create = useMutation({
@@ -92,6 +107,28 @@ export function DepartmentsClient() {
                       <span className="flex items-center gap-1"><CheckSquare className="size-3" /> {d._count.tasks}</span>
                     </div>
                   </div>
+                  {(can("Department.Edit") || can("Department.Delete")) && (
+                    <div className="mt-3 flex justify-end gap-1 border-t border-border pt-3">
+                      {can("Department.Edit") && (
+                        <button
+                          onClick={() => setEditing(d)}
+                          aria-label={`Edit ${d.name}`}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                      )}
+                      {can("Department.Delete") && (
+                        <button
+                          onClick={() => setDeleting(d)}
+                          aria-label={`Delete ${d.name}`}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Card>
             </motion.div>
@@ -125,6 +162,69 @@ export function DepartmentsClient() {
           </div>
         </div>
       </Dialog>
+
+      {editing && <EditDepartmentDialog dept={editing} onClose={() => setEditing(null)} />}
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        title={`Delete ${deleting?.name ?? "department"}?`}
+        description="This removes the department from your org structure."
+        archiveNote={
+          deleting && deleting._count.members + deleting._count.tasks > 0
+            ? `${deleting.name} has ${deleting._count.members} member(s) and ${deleting._count.tasks} task(s), so it will be archived instead of permanently deleted. Employees keep their department history.`
+            : undefined
+        }
+        pending={remove.isPending}
+      />
     </div>
+  );
+}
+
+function EditDepartmentDialog({ dept, onClose }: { dept: Dept; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [name, setName] = React.useState(dept.name);
+  const [description, setDescription] = React.useState(dept.description ?? "");
+  const [color, setColor] = React.useState(dept.color);
+
+  const save = useMutation({
+    mutationFn: () => apiSend(`/api/departments/${dept.id}`, "PATCH", { name, description, color }),
+    onSuccess: () => {
+      toast.success("Department updated");
+      qc.invalidateQueries({ queryKey: ["departments-full"] });
+      qc.invalidateQueries({ queryKey: ["departments"] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onClose={onClose} title={`Edit ${dept.name}`}>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>Name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Description</Label>
+          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Color</Label>
+          <div className="flex flex-wrap gap-2">
+            {COLORS.map((c) => (
+              <button key={c} onClick={() => setColor(c)} className={`size-7 rounded-full ring-2 ring-offset-2 ring-offset-card transition-all ${color === c ? "ring-foreground" : "ring-transparent"}`} style={{ backgroundColor: c }} />
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={!name || save.isPending}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />} Save changes
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

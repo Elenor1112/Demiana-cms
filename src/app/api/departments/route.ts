@@ -3,10 +3,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await requireUser();
+    // Archived departments are hidden unless explicitly requested, so an
+    // archived record actually disappears from the UI.
+    const includeArchived = req.nextUrl.searchParams.get("includeArchived") === "1";
     const departments = await db.department.findMany({
+      where: includeArchived ? {} : { archived: false },
       include: {
         head: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
         _count: { select: { members: true, tasks: true } },

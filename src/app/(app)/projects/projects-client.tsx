@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Plus, FolderKanban, CalendarClock, Loader2 } from "lucide-react";
+import { Plus, FolderKanban, CalendarClock, Loader2, Trash2 } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { formatDate } from "@/lib/utils";
 import { useCan } from "@/components/session-context";
 
@@ -48,9 +49,21 @@ export function ProjectsClient() {
     queryKey: ["task-meta"], queryFn: () => apiGet<any>("/api/tasks/meta"), enabled: open,
   });
 
+  const [deleting, setDeleting] = React.useState<Project | null>(null);
+
   const create = useMutation({
     mutationFn: (v: any) => apiSend("/api/projects", "POST", v),
     onSuccess: () => { toast.success("Project created"); qc.invalidateQueries({ queryKey: ["projects"] }); reset(); setOpen(false); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => apiSend<any>(`/api/projects/${id}`, "DELETE"),
+    onSuccess: (res: any) => {
+      toast.success(res?.message ?? "Project deleted");
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      setDeleting(null);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -94,6 +107,23 @@ export function ProjectsClient() {
                       {p.deadline && <span className="flex items-center gap-1"><CalendarClock className="size-3" />{formatDate(p.deadline)}</span>}
                     </div>
                   </div>
+
+                  {can("Project.Delete") && (
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={(e) => {
+                          // The card is a Link — stop the click becoming navigation.
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeleting(p);
+                        }}
+                        aria-label={`Delete ${p.name}`}
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </Card>
               </Link>
             </motion.div>
@@ -124,6 +154,20 @@ export function ProjectsClient() {
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        title={`Delete ${deleting?.name ?? "project"}?`}
+        description="This removes the project from your workspace."
+        archiveNote={
+          deleting && deleting._count.tasks > 0
+            ? `${deleting.name} has ${deleting._count.tasks} task(s), so it will be marked Cancelled instead of permanently deleted. Those tasks stay intact.`
+            : undefined
+        }
+        pending={remove.isPending}
+      />
     </div>
   );
 }
