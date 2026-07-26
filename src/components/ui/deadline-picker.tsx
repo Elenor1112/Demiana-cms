@@ -115,12 +115,11 @@ export function DeadlinePicker({
       <button
         ref={timeRef}
         type="button"
-        disabled={disabled || !date}
+        disabled={disabled}
         onClick={() => { setTimeOpen((o) => !o); setDateOpen(false); }}
         aria-haspopup="dialog"
         aria-expanded={timeOpen}
         aria-label={time ? `Deadline time: ${formatTimeLabel(time)}. Change` : "Set deadline time"}
-        title={!date ? "Pick a date first" : undefined}
         className={cn(
           "inline-flex h-9 min-w-[7.5rem] items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm shadow-sm transition-colors",
           "hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -149,7 +148,7 @@ export function DeadlinePicker({
         <CalendarGrid selected={selected} onSelect={setDate} onClear={() => { onChange(""); setDateOpen(false); }} />
       </Popover>
 
-      <Popover open={timeOpen} onClose={() => setTimeOpen(false)} anchorRef={timeRef} className="w-[13rem]">
+      <Popover open={timeOpen} onClose={() => setTimeOpen(false)} anchorRef={timeRef} className="w-[15rem]">
         <TimeGrid value={time} onSelect={setTime} onClear={() => { onChange(joinValue(date, "")); setTimeOpen(false); }} />
       </Popover>
     </div>
@@ -251,9 +250,32 @@ function CalendarGrid({
   );
 }
 
-/** Common slots first, with an exact field for anything else. */
-const PRESETS = ["09:00", "10:00", "12:00", "14:00", "16:00", "17:00", "18:00", "23:59"];
+/** Quick slots offered above the hour/minute columns. */
+const PRESETS = ["09:00", "12:00", "14:00", "17:00"];
 
+const HOURS12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1–12
+const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,…,55
+
+/** "14:30" -> { hour12: 2, minute: 30, period: "PM" } */
+function decompose(time: string) {
+  if (!/^\d{2}:\d{2}$/.test(time)) return null;
+  const [h, m] = time.split(":").map(Number);
+  return { hour12: h % 12 === 0 ? 12 : h % 12, minute: m, period: h >= 12 ? "PM" : "AM" };
+}
+
+function compose(hour12: number, minute: number, period: string) {
+  const h = period === "PM" ? (hour12 === 12 ? 12 : hour12 + 12) : hour12 === 12 ? 0 : hour12;
+  return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/**
+ * Hour / minute / AM-PM columns.
+ *
+ * Deliberately not <input type="time">: its rendering and keyboard behaviour
+ * differ per browser and it cannot be styled, which is what this refactor set
+ * out to replace. Three scrollable columns behave identically everywhere and
+ * are reachable by keyboard as ordinary buttons.
+ */
 function TimeGrid({
   value,
   onSelect,
@@ -263,52 +285,54 @@ function TimeGrid({
   onSelect: (t: string) => void;
   onClear: () => void;
 }) {
-  const [draft, setDraft] = React.useState(value);
-  React.useEffect(() => setDraft(value), [value]);
+  // Default to 9:00 AM so opening the panel with no time set shows a sensible
+  // starting point rather than an empty selection.
+  const current = decompose(value) ?? { hour12: 9, minute: 0, period: "AM" };
 
-  const listRef = React.useRef<HTMLDivElement>(null);
-  // Bring the chosen slot into view when the panel opens.
-  React.useEffect(() => {
-    listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: "center" });
-  }, []);
+  const commit = (patch: Partial<typeof current>) => {
+    const next = { ...current, ...patch };
+    onSelect(compose(next.hour12, next.minute, next.period));
+  };
 
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-muted-foreground" htmlFor="deadline-time-exact">
-        Time
-      </label>
-      <input
-        id="deadline-time-exact"
-        type="time"
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          // Only commit complete values — a half-typed time is not valid.
-          if (/^\d{2}:\d{2}$/.test(e.target.value)) onSelect(e.target.value);
-        }}
-        className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      />
+      <div className="mb-2 flex flex-wrap gap-1">
+        {PRESETS.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => onSelect(t)}
+            className={cn(
+              "rounded-md border px-2 py-1 text-xs transition-colors",
+              t === value
+                ? "border-primary bg-primary/10 font-medium text-primary"
+                : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+            )}
+          >
+            {formatTimeLabel(t)}
+          </button>
+        ))}
+      </div>
 
-      <div ref={listRef} className="mt-2 max-h-44 space-y-0.5 overflow-y-auto">
-        {PRESETS.map((t) => {
-          const active = t === value;
-          return (
-            <button
-              key={t}
-              type="button"
-              data-selected={active}
-              onClick={() => onSelect(t)}
-              aria-pressed={active}
-              className={cn(
-                "block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active ? "bg-primary font-medium text-primary-foreground" : "hover:bg-accent"
-              )}
-            >
-              {formatTimeLabel(t)}
-            </button>
-          );
-        })}
+      <div className="flex gap-1.5" role="group" aria-label="Select time">
+        <TimeColumn
+          label="Hour"
+          items={HOURS12.map((h) => ({ key: h, label: String(h) }))}
+          selected={current.hour12}
+          onPick={(h) => commit({ hour12: h })}
+        />
+        <TimeColumn
+          label="Min"
+          items={MINUTES.map((m) => ({ key: m, label: String(m).padStart(2, "0") }))}
+          selected={current.minute}
+          onPick={(m) => commit({ minute: m })}
+        />
+        <TimeColumn
+          label=""
+          items={[{ key: "AM", label: "AM" }, { key: "PM", label: "PM" }]}
+          selected={current.period}
+          onPick={(p) => commit({ period: p })}
+        />
       </div>
 
       {value && (
@@ -326,6 +350,62 @@ function TimeGrid({
   );
 }
 
+function TimeColumn<T extends string | number>({
+  label,
+  items,
+  selected,
+  onPick,
+}: {
+  label: string;
+  items: { key: T; label: string }[];
+  selected: T;
+  onPick: (key: T) => void;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  // Scroll the active row into view on open so the current value is visible
+  // without hunting for it.
+  React.useEffect(() => {
+    const el = ref.current?.querySelector('[data-active="true"]');
+    el?.scrollIntoView({ block: "center" });
+    // Only on mount — re-running would yank the list while the user scrolls.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="flex-1">
+      {label && (
+        <div className="mb-1 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </div>
+      )}
+      <div
+        ref={ref}
+        className={cn("max-h-40 space-y-0.5 overflow-y-auto pr-0.5", !label && "mt-[18px]")}
+      >
+        {items.map((item) => {
+          const active = item.key === selected;
+          return (
+            <button
+              key={String(item.key)}
+              type="button"
+              data-active={active}
+              aria-pressed={active}
+              onClick={() => onPick(item.key)}
+              className={cn(
+                "block w-full rounded-md px-2 py-1.5 text-center text-sm tabular-nums transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active ? "bg-primary font-semibold text-primary-foreground" : "hover:bg-accent"
+              )}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 /**
  * Convert a stored deadline into the picker's value.
  *
@@ -336,5 +416,9 @@ function TimeGrid({
 export function toDeadlineInput(d?: Date | string | null) {
   const full = toDateTimeInputValue(d);
   if (!full) return "";
+  // Known trade-off: a deadline set to exactly 12:00 AM is indistinguishable
+  // from a date-only one, since both are local midnight, and reopens as
+  // date-only. Storing a separate "has time" flag would need a schema change;
+  // "due that day" is by far the more common intent, so it wins.
   return full.endsWith("T00:00") ? full.slice(0, 10) : full;
 }
