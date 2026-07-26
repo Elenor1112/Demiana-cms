@@ -59,3 +59,23 @@ export async function apiSend<T>(
   }
   return res.json();
 }
+
+/**
+ * Send multipart/form-data (file uploads), with the same single-flight refresh
+ * and retry behaviour as apiSend.
+ *
+ * The Content-Type header is deliberately not set: the browser must generate it
+ * so it carries the multipart boundary.
+ */
+export async function apiUpload<T>(
+  url: string,
+  form: FormData,
+  method: "POST" | "PATCH" | "PUT" = "POST"
+): Promise<T> {
+  const res = await withRetry(() => fetch(url, { method, body: form }));
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `Upload failed (${res.status})`);
+  }
+  return res.json();
+}

@@ -22,10 +22,14 @@ import { formatDate } from "@/lib/utils";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { useCan, useSession } from "@/components/session-context";
 import { PermissionEditor } from "./permission-editor";
+import { JobDescriptionPanel } from "./job-description-panel";
 
 type Employee = any;
 
-const TABS = ["Overview", "Team", "Achievements", "Warnings", "Documents", "Access"] as const;
+const TABS = [
+  "Overview", "Team", "Achievements", "Warnings",
+  "Job Description", "Documents", "Access",
+] as const;
 
 export function EmployeeProfile({ employee }: { employee: Employee }) {
   const can = useCan();
@@ -36,8 +40,21 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
   const [resetPwOpen, setResetPwOpen] = React.useState(false);
   const roleMeta = ROLE_META[employee.role.key as keyof typeof ROLE_META];
 
-  const visibleTabs = TABS.filter((t) => t !== "Access" || can("Employee.EditPermissions"));
   const isSelf = me.id === employee.id;
+  // The job description tab is for people who manage the document plus the
+  // employee themselves; everyone else has no business seeing it here.
+  const canSeeJobDescription =
+    isSelf ||
+    can("JobDescription.ViewAll") ||
+    (can("JobDescription.ViewAcknowledgments") &&
+      me.departmentId != null &&
+      employee.departmentId === me.departmentId);
+
+  const visibleTabs = TABS.filter((t) => {
+    if (t === "Access") return can("Employee.EditPermissions");
+    if (t === "Job Description") return canSeeJobDescription;
+    return true;
+  });
 
   return (
     <div>
@@ -124,6 +141,12 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
         {tab === "Team" && <TeamTab employee={employee} />}
         {tab === "Achievements" && <AchievementsTab employee={employee} />}
         {tab === "Warnings" && <WarningsTab employee={employee} />}
+        {tab === "Job Description" && canSeeJobDescription && (
+          <JobDescriptionPanel
+            employeeId={employee.id}
+            employeeName={employee.firstName}
+          />
+        )}
         {tab === "Documents" && <DocumentsTab employee={employee} />}
         {tab === "Access" && can("Employee.EditPermissions") && (
           <PermissionEditor userId={employee.id} />

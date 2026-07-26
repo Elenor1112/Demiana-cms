@@ -3,7 +3,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
-import { ROLE_META } from "@/lib/rbac";
+import { can, ROLE_META } from "@/lib/rbac";
+import { addJobDescriptionVersion, readPdfField } from "@/lib/job-descriptions";
 import type { RoleKey } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -59,10 +60,45 @@ const createSchema = z.object({
   password: z.string().min(8),
 });
 
+/**
+ * Create an employee.
+ *
+ * Accepts JSON, or multipart/form-data when a job description PDF is attached
+ * to the creation form. The PDF is validated *before* the user row is written,
+ * so a bad file fails the whole request rather than leaving behind an employee
+ * with no document and a confusing half-success.
+ */
 export async function POST(req: NextRequest) {
   try {
     const actor = await requirePermission("Employee.Create");
-    const body = await req.json();
+
+    const isMultipart = req.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .includes("multipart/form-data");
+
+    let body: unknown;
+    let jobDescriptionFile = null;
+    let jobDescriptionTitle: string | undefined;
+
+    if (isMultipart) {
+      const form = await req.formData();
+      const payload = form.get("payload");
+      body = typeof payload === "string" ? JSON.parse(payload) : {};
+
+      jobDescriptionFile = await readPdfField(form, "jobDescription");
+      if (jobDescriptionFile && !can(actor, "JobDescription.Upload")) {
+        return NextResponse.json(
+          { error: "Missing permission: JobDescription.Upload" },
+          { status: 403 }
+        );
+      }
+      const title = form.get("jobDescriptionTitle");
+      jobDescriptionTitle = typeof title === "string" && title.trim() ? title : undefined;
+    } else {
+      body = await req.json();
+    }
+
     const data = createSchema.parse(body);
 
     if (!(data.roleKey in ROLE_META)) {
@@ -96,6 +132,43 @@ export async function POST(req: NextRequest) {
       entityId: user.id,
       newValue: { email: user.email, role: data.roleKey },
     });
+
+    // Attach the job description as v1 of the new employee's document. The file
+    // was already validated above, so this only fails on infrastructure
+    // problems — report it rather than failing the created account.
+    if (jobDescriptionFile) {
+      try {
+        const { document, version } = await addJobDescriptionVersion({
+          employeeId: user.id,
+          title: jobDescriptionTitle,
+          uploadedById: actor.id,
+          file: jobDescriptionFile,
+        });
+        await audit({
+          actorId: actor.id,
+          action: "jobDescription.upload",
+          entity: "jobDescription",
+          entityId: document.id,
+          newValue: {
+            employeeId: user.id,
+            version: version.version,
+            fileName: version.fileName,
+            size: version.size,
+            checksum: version.checksum,
+          },
+        });
+      } catch (err) {
+        console.error("[employees] job description attach failed", err);
+        return NextResponse.json(
+          {
+            employee: user,
+            warning:
+              "The employee was created, but their job description could not be saved. Please upload it from their profile.",
+          },
+          { status: 201 }
+        );
+      }
+    }
 
     return NextResponse.json({ employee: user }, { status: 201 });
   } catch (e) {

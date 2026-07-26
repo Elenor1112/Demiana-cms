@@ -154,6 +154,10 @@ model User {
   achievements    Achievement[]
   attendances     Attendance[]
 
+  jobDescription        JobDescription?         @relation("EmployeeJobDescription")
+  jobDescriptionUploads JobDescriptionVersion[] @relation("JobDescriptionUploader")
+  jobDescriptionAcks    JobDescriptionAck[]     @relation("JobDescriptionAcks")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -762,4 +766,102 @@ model PolicyAck {
   ackedAt  DateTime @default(now())
 
   @@unique([policyId, userId, version])
+}
+
+// ─────────────────────────────────────────────────────────────
+// JOB DESCRIPTIONS
+//
+// Mirrors the Policy/PolicyAck shape, with one extra level: a job description
+// is a per-employee *document* that accumulates immutable *versions*. The
+// employee row points at exactly one JobDescription (single source of truth);
+// replacing the PDF appends a version and moves the pointer, so acknowledgment
+// history against superseded versions stays intact and auditable.
+// ─────────────────────────────────────────────────────────────
+
+model JobDescription {
+  id String @id @default(cuid())
+
+  /// The employee this document belongs to. One live document per employee —
+  /// enforced by @unique so "which job description is mine" can never be
+  /// ambiguous. Replacing the file adds a version, it does not add a row.
+  employee   User   @relation("EmployeeJobDescription", fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String @unique
+
+  title String
+
+  /// Denormalised pointer to the version employees must currently read and
+  /// acknowledge. Kept in sync inside the same transaction that creates a
+  /// version, so a read never has to sort versions to find "current".
+  currentVersionId String?                @unique
+  currentVersion   JobDescriptionVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+
+  versions JobDescriptionVersion[] @relation("DocumentVersions")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+}
+
+model JobDescriptionVersion {
+  id String @id @default(cuid())
+
+  document   JobDescription @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String
+
+  /// 1-based, monotonically increasing per document.
+  version Int
+
+  fileName String
+  mimeType String @default("application/pdf")
+  /// Bytes. Kept alongside the blob so listings can show a size without
+  /// loading the payload.
+  size     Int
+  /// sha256 of the file, for integrity checks and to detect a re-upload of a
+  /// byte-identical document.
+  checksum String
+
+  uploadedBy   User?   @relation("JobDescriptionUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+
+  /// Optional free-text note explaining what changed in this revision.
+  changeNote String?
+
+  file            JobDescriptionFile?
+  acknowledgments JobDescriptionAck[]
+
+  currentFor JobDescription? @relation("CurrentVersion")
+
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, version])
+  @@index([documentId])
+}
+
+/// The PDF payload, split into its own table so that every query touching
+/// version metadata (lists, acknowledgment status, admin dashboards) stays
+/// cheap — Postgres never reads the blob unless the download route asks for it.
+model JobDescriptionFile {
+  versionId String                @id
+  version   JobDescriptionVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  data      Bytes
+}
+
+model JobDescriptionAck {
+  id String @id @default(cuid())
+
+  version   JobDescriptionVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  versionId String
+
+  user   User   @relation("JobDescriptionAcks", fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  ip        String?
+  userAgent String?
+  ackedAt   DateTime @default(now())
+
+  /// One acknowledgment per person per version — a new upload creates a new
+  /// version, which is what re-arms the requirement.
+  @@unique([versionId, userId])
+  @@index([userId])
 }

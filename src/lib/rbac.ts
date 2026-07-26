@@ -65,6 +65,12 @@ export const PERMISSIONS = {
   "Audit.View": "View audit logs",
   "Settings.Edit": "Edit company settings",
   "Policy.Manage": "Manage company policies",
+  // Job descriptions
+  "JobDescription.ViewOwn": "View your own job description",
+  "JobDescription.ViewAll": "View every employee's job description",
+  "JobDescription.Upload": "Upload / replace job description documents",
+  "JobDescription.Delete": "Delete a job description and its history",
+  "JobDescription.ViewAcknowledgments": "View job description acknowledgment status",
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSIONS;
@@ -148,6 +154,9 @@ const baseEmployee: PermissionKey[] = [
   "Leave.Request",
   "Permission.Request",
   "Resignation.Submit",
+  // Every employee can read and acknowledge the job description assigned to
+  // them — reach beyond their own document requires JobDescription.ViewAll.
+  "JobDescription.ViewOwn",
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
@@ -177,6 +186,12 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Permission.Approve",
     "Reports.View",
     "Performance.View",
+    // Owns the employee lifecycle (Employee.Create/Edit/Delete above), so it
+    // owns the document attached to it too.
+    "JobDescription.ViewAll",
+    "JobDescription.Upload",
+    "JobDescription.Delete",
+    "JobDescription.ViewAcknowledgments",
   ],
   SALES_MANAGER: [
     ...baseEmployee,
@@ -200,6 +215,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Task.Approve",
     "Leave.Approve",
     "Permission.Approve",
+    // Sees acknowledgment state for the people who report to them (scoped by
+    // jobDescriptionScope), but cannot upload or replace documents — that
+    // stays with HR / Account Management.
+    "JobDescription.ViewAcknowledgments",
   ],
   DESIGNER: [...baseEmployee, "Task.Edit"],
   CONTENT_CREATOR: [...baseEmployee, "Task.Edit"],
@@ -243,4 +262,41 @@ export function canAssignTo(actorRole: RoleKey, targetRole: RoleKey) {
   const allowed = ASSIGNMENT_MATRIX[actorRole];
   if (!allowed) return false;
   return allowed.includes(targetRole);
+}
+
+/**
+ * How far a viewer can see into other people's job descriptions.
+ *
+ * Single source of truth for job-description visibility — every route that
+ * returns another employee's document or acknowledgment state resolves scope
+ * through here rather than re-deriving the rules.
+ *
+ *  - `all`        — super admins and holders of JobDescription.ViewAll.
+ *  - `department` — managers who can see acknowledgment status: limited to
+ *                   their own department, mirroring Task.ViewDepartment.
+ *  - `self`       — everyone else. Their own document only.
+ */
+export type JobDescriptionScope =
+  | { kind: "all" }
+  | { kind: "department"; departmentId: string }
+  | { kind: "self" };
+
+export function jobDescriptionScope(user: SessionUser): JobDescriptionScope {
+  if (can(user, "JobDescription.ViewAll")) return { kind: "all" };
+  if (can(user, "JobDescription.ViewAcknowledgments") && user.departmentId) {
+    return { kind: "department", departmentId: user.departmentId };
+  }
+  return { kind: "self" };
+}
+
+/** Whether `viewer` may read `employeeId`'s job description. */
+export function canViewJobDescriptionOf(
+  viewer: SessionUser,
+  employee: { id: string; departmentId: string | null }
+) {
+  if (viewer.id === employee.id) return can(viewer, "JobDescription.ViewOwn");
+  const scope = jobDescriptionScope(viewer);
+  if (scope.kind === "all") return true;
+  if (scope.kind === "department") return employee.departmentId === scope.departmentId;
+  return false;
 }

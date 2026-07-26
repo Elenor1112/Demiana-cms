@@ -24,6 +24,7 @@ export const NAV: NavItem[] = [
   { label: "Performance", href: "/performance", icon: "TrendingUp", section: "People", permission: "Performance.View" },
   { label: "Employee of the Month", href: "/eotm", icon: "Trophy", section: "People" },
   { label: "Policies", href: "/policies", icon: "BookOpen", section: "People" },
+  { label: "Job Description", href: "/job-description", icon: "FileText", section: "People", permission: "JobDescription.ViewOwn" },
 
   { label: "Analytics", href: "/analytics", icon: "BarChart3", section: "Admin", permission: "Reports.View" },
   { label: "Audit Logs", href: "/audit", icon: "ScrollText", section: "Admin", permission: "Audit.View" },

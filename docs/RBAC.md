@@ -34,7 +34,7 @@ Source of truth: [`src/lib/rbac.ts`](../src/lib/rbac.ts).
 
 `Task` · `Project` · `Client` · `Employee` · `Department` · `Leave` ·
 `Permission` · `Resignation` · `Performance` · `Warning` · `Eotm` · `Reports` ·
-`Analytics` · `Audit` · `Settings` · `Policy`
+`Analytics` · `Audit` · `Settings` · `Policy` · `JobDescription`
 
 ## Role → Permission Matrix (summary)
 
@@ -59,9 +59,29 @@ Source of truth: [`src/lib/rbac.ts`](../src/lib/rbac.ts).
 | Eotm.Manage | ✅ | ✅ | — | — | — | — | — | — |
 | Audit.View | ✅ | ✅ | — | — | — | — | — | — |
 | Settings.Edit / Policy.Manage | ✅ | ✅ | — | — | — | — | — | — |
+| JobDescription.ViewOwn | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| JobDescription.ViewAll | ✅ | ✅ | ✅ | — | — | — | — | — |
+| JobDescription.Upload / .Delete | ✅ | ✅ | ✅ | — | — | — | — | — |
+| JobDescription.ViewAcknowledgments | ✅ | ✅ | ✅ | — | ✅(dept) | — | — | — |
 
 *(Base employee permissions — View across Task/Project/Client/Employee/Department,
-plus Leave/Permission/Resignation requests — are held by every role.)*
+plus Leave/Permission/Resignation requests and JobDescription.ViewOwn — are held
+by every role.)*
+
+### Job Description visibility
+
+Reach beyond your own document resolves through `jobDescriptionScope()` in
+[`src/lib/rbac.ts`](../src/lib/rbac.ts) — one helper used by every route that can
+expose another employee's document:
+
+| Scope | Who | Sees |
+|---|---|---|
+| `all` | Super admins, `JobDescription.ViewAll` | Every employee |
+| `department` | `JobDescription.ViewAcknowledgments` + a department | Their own department (+ themselves) |
+| `self` | Everyone else | Their own document only |
+
+Acknowledgment is always self-service: `POST .../ack` refuses a version that
+belongs to anyone but the caller, regardless of permissions.
 
 ## Task-Assignment Matrix
 

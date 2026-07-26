@@ -11,8 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { apiSend } from "@/lib/fetcher";
+import { apiSend, apiUpload } from "@/lib/fetcher";
 import { ROLE_META } from "@/lib/rbac";
+import { useCan } from "@/components/session-context";
+import { JobDescriptionUpload } from "@/components/job-description-upload";
 
 const schema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -38,6 +40,9 @@ export function CreateEmployeeDialog({
   employees: { id: string; name: string }[];
 }) {
   const qc = useQueryClient();
+  const can = useCan();
+  const canUploadJd = can("JobDescription.Upload");
+  const [jobDescription, setJobDescription] = React.useState<File | null>(null);
   const {
     register,
     handleSubmit,
@@ -49,11 +54,24 @@ export function CreateEmployeeDialog({
   });
 
   const mutation = useMutation({
-    mutationFn: (values: FormValues) => apiSend("/api/employees", "POST", values),
-    onSuccess: () => {
-      toast.success("Employee added");
+    mutationFn: (values: FormValues) => {
+      // Only switch to multipart when there is actually a file — a plain JSON
+      // create stays on the existing path.
+      if (!jobDescription) return apiSend<any>("/api/employees", "POST", values);
+      const form = new FormData();
+      form.append("payload", JSON.stringify(values));
+      form.append("jobDescription", jobDescription);
+      return apiUpload<any>("/api/employees", form);
+    },
+    onSuccess: (res: any) => {
+      // The account can succeed while the document fails; surface that rather
+      // than reporting a clean success.
+      if (res?.warning) toast.warning(res.warning);
+      else toast.success(jobDescription ? "Employee added with job description" : "Employee added");
       qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["job-descriptions"] });
       reset();
+      setJobDescription(null);
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -107,6 +125,23 @@ export function CreateEmployeeDialog({
         <Field label="Temporary password" error={errors.password?.message}>
           <Input type="text" {...register("password")} />
         </Field>
+
+        {canUploadJd && (
+          <div className="space-y-2 border-t border-border pt-4">
+            <div>
+              <Label>Job Description</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Optional. The employee will be asked to read and acknowledge it.
+              </p>
+            </div>
+            <JobDescriptionUpload
+              file={jobDescription}
+              onChange={setJobDescription}
+              disabled={mutation.isPending}
+            />
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={mutation.isPending}>

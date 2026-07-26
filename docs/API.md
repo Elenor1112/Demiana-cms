@@ -62,6 +62,25 @@ appropriate status (400 validation, 401 auth, 403 permission, 404 not found,
 | PATCH | `/api/eotm/override` | Eotm.Manage — update scoring weights |
 | GET | `/api/analytics/overview` | authed — KPIs, trends, breakdowns |
 
+## Job Descriptions
+One document per employee, versioned. Uploads are `multipart/form-data`
+(`file` = PDF, max 5 MB; optional `title`, `changeNote`); everything else is JSON.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/api/job-descriptions` | authed | `{ mine, roster }` — `roster` is null without JobDescription.ViewAcknowledgments. Filters: `q, department, employee, status(acknowledged\|pending\|missing)` |
+| GET | `/api/employees/:id/job-description` | scoped | Document + full version history |
+| POST | `/api/employees/:id/job-description` | JobDescription.Upload | Appends a version and re-points the document |
+| DELETE | `/api/employees/:id/job-description` | JobDescription.Delete | Removes the document, all versions and acks |
+| GET | `/api/job-descriptions/versions/:versionId/file` | scoped | Streams the PDF (`inline`; `?download=1` for attachment). ETag/304 |
+| POST | `/api/job-descriptions/versions/:versionId/ack` | JobDescription.ViewOwn | Self only; 409 on a superseded version |
+
+`POST /api/employees` also accepts `multipart/form-data` (`payload` = the JSON
+body, `jobDescription` = PDF) to attach a document at creation time.
+
+*Scoped* = own document always; others per `jobDescriptionScope()` — ViewAll sees
+everyone, ViewAcknowledgments sees their own department, otherwise self only.
+
 ## Clients / Policies / Audit / Notifications
 | Method | Path | Permission |
 |---|---|---|

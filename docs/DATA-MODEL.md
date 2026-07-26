@@ -42,6 +42,15 @@ Full schema: [`prisma/schema.prisma`](../prisma/schema.prisma). PostgreSQL.
 - **EotmWinner** — one per period, override + justification + reward
 - **Achievement**, **EmployeeDocument**
 
+### Job Descriptions
+- **JobDescription** — one per employee (`employeeId @unique`), with a
+  `currentVersionId` pointer to the revision that must currently be acknowledged
+- **JobDescriptionVersion** — immutable revision: `version` (unique per
+  document), `fileName`, `size`, `checksum` (sha256), `uploadedBy`, `changeNote`
+- **JobDescriptionFile** — the PDF bytes, split off so metadata queries never
+  read the blob
+- **JobDescriptionAck** — per user/version, with `ip`/`userAgent`
+
 ### Platform
 - **Notification** — typed, read flag, link
 - **AuditLog** — actor, action, entity, old/new value, ip, device
@@ -59,6 +68,8 @@ Task *─* Task            (TaskDependency)
 Client 1─* Project 1─* Task
 ApprovalStep *─1 (Leave|Permission|Resignation)   via (kind, entityId)
 User 1─* EotmScore ; EotmWinner *─1 User
+User 1─1 JobDescription 1─* JobDescriptionVersion 1─1 JobDescriptionFile
+JobDescriptionVersion 1─* JobDescriptionAck *─1 User
 ```
 
 ## Enums
