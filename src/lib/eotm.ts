@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "./db";
+import { deadlineDueBy } from "./tasks";
 
 /**
  * Employee of the Month — weighted scoring engine.
@@ -56,8 +57,11 @@ export async function computeScores(period: string): Promise<ScoreBreakdown[]> {
     // task completion rate
     const taskCompletion = assigned ? Math.min(100, (completed / assigned) * 100) : 0;
 
-    // deadline adherence: done tasks completed on/before deadline
-    const onTime = doneTasks.filter((t) => !t.deadline || t.updatedAt <= t.deadline).length;
+    // deadline adherence: done tasks completed on/before deadline. A date-only
+    // deadline means end of that day, so finishing during the due day is on time.
+    const onTime = doneTasks.filter(
+      (t) => !t.deadline || t.updatedAt <= deadlineDueBy(t.deadline)
+    ).length;
     const deadline = doneTasks.length ? (onTime / doneTasks.length) * 100 : (completed ? 100 : 0);
 
     // quality: average manager review score for the period

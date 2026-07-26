@@ -8,6 +8,7 @@ export async function GET() {
     const user = await requireUser();
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     const [
       totalTasks, openTasks, doneThisMonth, overdue,
@@ -17,7 +18,9 @@ export async function GET() {
       db.task.count(),
       db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"] } } }),
       db.task.count({ where: { status: "DONE", updatedAt: { gte: monthStart } } }),
-      db.task.count({ where: { deadline: { lt: now }, status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"] } } }),
+      // A date-only deadline stores local midnight and means "end of that day",
+      // so anything from today onwards is not yet overdue.
+      db.task.count({ where: { deadline: { lt: todayStart }, status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"] } } }),
       db.user.count({ where: { status: "ACTIVE" } }),
       db.project.count({ where: { status: "ACTIVE" } }),
       db.client.count({ where: { status: "ACTIVE" } }),

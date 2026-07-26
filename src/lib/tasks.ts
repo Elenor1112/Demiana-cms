@@ -43,6 +43,47 @@ export async function canViewTask(user: SessionUser, taskId: string) {
   return Boolean(found);
 }
 
+/**
+ * Parse a deadline coming from the client.
+ *
+ * Accepts "2026-08-15" (date only) and "2026-08-15T14:30" from a
+ * datetime-local input. JS parses a bare date string as UTC midnight, which in
+ * a non-UTC zone lands on a different hour of the intended day; the date-only
+ * branch pins it to *local* midnight instead, which the UI then renders as
+ * date-only (no misleading "3:00 AM").
+ */
+export function parseDeadline(input: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const [y, m, d] = input.split("-").map(Number);
+    return new Date(y, m - 1, d, 0, 0, 0, 0);
+  }
+  return new Date(input);
+}
+
+/**
+ * The instant a deadline actually lapses.
+ *
+ * A date-only deadline (local midnight) means "due by end of that day", so it
+ * should not read as overdue at 00:01 on the day itself.
+ */
+export function deadlineDueBy(deadline: Date): Date {
+  if (deadline.getHours() === 0 && deadline.getMinutes() === 0) {
+    const d = new Date(deadline);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }
+  return deadline;
+}
+
+/** Human-readable deadline for notification text; includes time when set. */
+export function formatDeadlineText(d: Date) {
+  const datePart = d.toDateString();
+  if (d.getHours() === 0 && d.getMinutes() === 0) return datePart;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${datePart} ${hh}:${mm}`;
+}
+
 /** Generate the next task code, e.g. ELN-143. */
 export async function nextTaskCode(): Promise<string> {
   const last = await db.task.findFirst({

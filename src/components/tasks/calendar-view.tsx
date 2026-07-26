@@ -2,6 +2,7 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PRIORITY_META, TASK_STATUS_META } from "@/lib/constants";
+import { formatTimeOnly } from "@/lib/utils";
 import type { TaskListItem } from "./task-bits";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +26,12 @@ export function CalendarView({ tasks, onOpen }: { tasks: TaskListItem[]; onOpen:
       if (d.getFullYear() === year && d.getMonth() === month) {
         (map[d.getDate()] ??= []).push(t);
       }
+    }
+    // Within a day, order by time so the schedule reads chronologically.
+    for (const day of Object.keys(map)) {
+      map[Number(day)].sort(
+        (a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()
+      );
     }
     return map;
   }, [tasks, year, month]);
@@ -82,6 +89,9 @@ export function CalendarView({ tasks, onOpen }: { tasks: TaskListItem[]; onOpen:
                         className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium"
                         style={{ backgroundColor: TASK_STATUS_META[t.status].bg, color: PRIORITY_META[t.priority].color }}
                       >
+                        {formatTimeOnly(t.deadline) && (
+                          <span className="mr-1 font-normal opacity-70">{formatTimeOnly(t.deadline)}</span>
+                        )}
                         {t.title}
                       </button>
                     ))}

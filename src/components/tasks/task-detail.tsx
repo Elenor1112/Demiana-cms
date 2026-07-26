@@ -19,7 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
-import { toDateInputValue, formatDate, relativeTime, fullName } from "@/lib/utils";
+import { toDateTimeInputValue, formatDateTime, relativeTime, fullName } from "@/lib/utils";
 import { useSession, useCan } from "@/components/session-context";
 import type { TaskStatus } from "@prisma/client";
 
@@ -172,15 +172,15 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                 <MetaRow label="Deadline">
                   {canEditDetails ? (
                     <Input
-                      type="date"
+                      type="datetime-local"
                       className="h-8"
-                      value={toDateInputValue(task.deadline)}
+                      value={toDateTimeInputValue(task.deadline)}
                       onChange={(e) =>
                         patch.mutate({ deadline: e.target.value ? e.target.value : null })
                       }
                     />
                   ) : (
-                    <span className="text-sm">{task.deadline ? formatDate(task.deadline) : "—"}</span>
+                    <span className="text-sm">{formatDateTime(task.deadline)}</span>
                   )}
                 </MetaRow>
                 <MetaRow label="Project">

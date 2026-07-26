@@ -2,7 +2,7 @@
 import { StatusBadge, PriorityFlag, type TaskListItem } from "./task-bits";
 import { AvatarGroup } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
-import { formatDate } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 export function TableView({ tasks, onOpen }: { tasks: TaskListItem[]; onOpen: (id: string) => void }) {
   return (
@@ -30,7 +30,7 @@ export function TableView({ tasks, onOpen }: { tasks: TaskListItem[]; onOpen: (i
                   <span className="text-xs text-muted-foreground">{task.progress}%</span>
                 </div>
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{formatDate(task.deadline)}</td>
+              <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{formatDateTime(task.deadline)}</td>
             </tr>
           ))}
         </tbody>

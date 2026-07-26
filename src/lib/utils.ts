@@ -32,6 +32,51 @@ export function toDateInputValue(d?: Date | string | null) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+const dtfTime = new Intl.DateTimeFormat("en-US", {
+  month: "short", day: "numeric", year: "numeric",
+  hour: "numeric", minute: "2-digit",
+});
+const dtfTimeOnly = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+
+/**
+ * Format a date, including the time when one was actually set.
+ *
+ * Deadlines created before time-of-day support (and date-only entries) land on
+ * local midnight; showing "12:00 AM" for those would be noise, so midnight
+ * renders as date-only.
+ */
+export function formatDateTime(d?: Date | string | null) {
+  if (!d) return "—";
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return "—";
+  const midnight = date.getHours() === 0 && date.getMinutes() === 0;
+  return midnight ? dtf.format(date) : dtfTime.format(date);
+}
+
+/** Just the clock portion, or "" when the deadline is date-only. */
+export function formatTimeOnly(d?: Date | string | null) {
+  if (!d) return "";
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return "";
+  if (date.getHours() === 0 && date.getMinutes() === 0) return "";
+  return dtfTimeOnly.format(date);
+}
+
+/**
+ * Format a date for an <input type="datetime-local"> value (yyyy-MM-ddTHH:mm).
+ * Local parts, for the same timezone reason as toDateInputValue.
+ */
+export function toDateTimeInputValue(d?: Date | string | null) {
+  if (!d) return "";
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
 export function relativeTime(d?: Date | string | null) {
   if (!d) return "";
   const date = new Date(d);

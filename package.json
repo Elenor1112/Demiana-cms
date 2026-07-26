@@ -13,6 +13,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset-ceo": "tsx prisma/reset-to-ceo.ts",
     "db:update-hours": "tsx prisma/update-working-hours.ts",
+    "db:normalize-deadlines": "tsx prisma/normalize-deadlines.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {

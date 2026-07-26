@@ -84,7 +84,7 @@ export function CreateTaskDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Deadline</Label>
-            <Input type="date" {...register("deadline")} />
+            <Input type="datetime-local" {...register("deadline")} />
           </div>
           <div className="space-y-1.5">
             <Label>Est. hours</Label>

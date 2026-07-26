@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
-import { nextTaskCode, logActivity, taskVisibilityFilter } from "@/lib/tasks";
+import { nextTaskCode, logActivity, taskVisibilityFilter, parseDeadline } from "@/lib/tasks";
 import { notifyMany } from "@/lib/notify";
 import type { Prisma, TaskStatus } from "@prisma/client";
 
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
         clientId: data.clientId || null,
         departmentId: data.departmentId || null,
         parentId: data.parentId || null,
-        deadline: data.deadline ? new Date(data.deadline) : null,
+        deadline: data.deadline ? parseDeadline(data.deadline) : null,
         estimatedHours: data.estimatedHours ?? null,
         createdById: user.id,
         assignees: { create: data.assigneeIds.map((userId) => ({ userId })) },

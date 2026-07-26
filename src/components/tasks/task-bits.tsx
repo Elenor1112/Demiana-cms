@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { AvatarGroup } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { TASK_STATUS_META, PRIORITY_META } from "@/lib/constants";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDateTime, cn } from "@/lib/utils";
 import type { TaskStatus, TaskPriority } from "@prisma/client";
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
@@ -30,8 +30,14 @@ export function PriorityFlag({ priority, withLabel }: { priority: TaskPriority; 
 export function DeadlinePill({ deadline, status }: { deadline?: string | Date | null; status: TaskStatus }) {
   if (!deadline) return null;
   const date = new Date(deadline);
-  const overdue = date < new Date() && status !== "DONE" && status !== "CANCELLED";
-  const soon = !overdue && date.getTime() - Date.now() < 2 * 864e5 && status !== "DONE";
+  // A date-only deadline (local midnight) means end of that day, so it should
+  // not read as overdue from 00:01 onwards.
+  const dueBy =
+    date.getHours() === 0 && date.getMinutes() === 0
+      ? new Date(new Date(date).setHours(23, 59, 59, 999))
+      : date;
+  const overdue = dueBy < new Date() && status !== "DONE" && status !== "CANCELLED";
+  const soon = !overdue && dueBy.getTime() - Date.now() < 2 * 864e5 && status !== "DONE";
   return (
     <span
       className={cn(
@@ -40,7 +46,7 @@ export function DeadlinePill({ deadline, status }: { deadline?: string | Date | 
       )}
     >
       <CalendarClock className="size-3" />
-      {formatDate(date)}
+      {formatDateTime(date)}
     </span>
   );
 }

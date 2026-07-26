@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask } from "@/lib/tasks";
+import { logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask, parseDeadline, formatDeadlineText } from "@/lib/tasks";
 import { can } from "@/lib/rbac";
 import { notifyMany } from "@/lib/notify";
 import type { TaskStatus } from "@prisma/client";
@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: data.status,
         priority: data.priority,
         progress,
-        deadline: data.deadline ? new Date(data.deadline) : data.deadline === null ? null : undefined,
+        deadline: data.deadline ? parseDeadline(data.deadline) : data.deadline === null ? null : undefined,
         estimatedHours: data.estimatedHours,
         actualHours: data.actualHours,
         projectId: data.projectId === undefined ? undefined : data.projectId || null,
@@ -140,7 +140,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // activity log for deadline changes
     if (data.deadline !== undefined) {
-      const nextDeadline = data.deadline ? new Date(data.deadline) : null;
+      const nextDeadline = data.deadline ? parseDeadline(data.deadline) : null;
       if (nextDeadline?.getTime() !== before.deadline?.getTime()) {
         await logActivity({
           actorId: user.id,
@@ -154,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           await notifyMany(others, {
             type: "DEADLINE_REMINDER",
             title: `Deadline changed: ${before.title}`,
-            body: `${user.firstName} moved ${before.code} to ${nextDeadline ? nextDeadline.toDateString() : "no deadline"}`,
+            body: `${user.firstName} moved ${before.code} to ${nextDeadline ? formatDeadlineText(nextDeadline) : "no deadline"}`,
             link: `/tasks?task=${id}`,
           });
         }
