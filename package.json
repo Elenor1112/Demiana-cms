@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset-ceo": "tsx prisma/reset-to-ceo.ts",
+    "db:update-hours": "tsx prisma/update-working-hours.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {
