@@ -76,11 +76,27 @@ export function DeadlinePicker({
 
   const selected = parseDateKey(date);
 
+  /**
+   * The time the picker is showing.
+   *
+   * Held here rather than derived purely from `value` because 12:00 AM stores
+   * as local midnight, which reads back as date-only — without this the hour
+   * column would snap from the 12 you just pressed back to the default. While
+   * the panel is open this state is the source of truth; `value` catches up.
+   */
+  const [draftTime, setDraftTime] = React.useState(time);
+  React.useEffect(() => {
+    // Follow external changes (a different task, or the deadline being cleared)
+    // but never while the panel is open, or it would fight the user.
+    if (!timeOpen) setDraftTime(time);
+  }, [time, timeOpen]);
+
   const setDate = (next: Date) => {
-    onChange(joinValue(toDateKey(next), time));
+    onChange(joinValue(toDateKey(next), draftTime));
     setDateOpen(false);
   };
   const setTime = (next: string) => {
+    setDraftTime(next);
     // Picking a time with no date yet would be meaningless — default to today.
     const base = date || toDateKey(new Date());
     onChange(joinValue(base, next));
@@ -119,7 +135,7 @@ export function DeadlinePicker({
         onClick={() => { setTimeOpen((o) => !o); setDateOpen(false); }}
         aria-haspopup="dialog"
         aria-expanded={timeOpen}
-        aria-label={time ? `Deadline time: ${formatTimeLabel(time)}. Change` : "Set deadline time"}
+        aria-label={draftTime ? `Deadline time: ${formatTimeLabel(draftTime)}. Change` : "Set deadline time"}
         className={cn(
           "inline-flex h-9 min-w-[7.5rem] items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm shadow-sm transition-colors",
           "hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -128,8 +144,8 @@ export function DeadlinePicker({
         )}
       >
         <Clock className="size-4 shrink-0 text-muted-foreground" />
-        <span className={cn("truncate", !time && "text-muted-foreground")}>
-          {time ? formatTimeLabel(time) : "Add time"}
+        <span className={cn("truncate", !draftTime && "text-muted-foreground")}>
+          {draftTime ? formatTimeLabel(draftTime) : "Add time"}
         </span>
       </button>
 
@@ -149,7 +165,7 @@ export function DeadlinePicker({
       </Popover>
 
       <Popover open={timeOpen} onClose={() => setTimeOpen(false)} anchorRef={timeRef} className="w-[15rem]">
-        <TimeGrid value={time} onSelect={setTime} onClear={() => { onChange(joinValue(date, "")); setTimeOpen(false); }} />
+        <TimeGrid value={draftTime} onSelect={setTime} onClear={() => { setDraftTime(""); onChange(joinValue(date, "")); setTimeOpen(false); }} />
       </Popover>
     </div>
   );
@@ -416,9 +432,9 @@ function TimeColumn<T extends string | number>({
 export function toDeadlineInput(d?: Date | string | null) {
   const full = toDateTimeInputValue(d);
   if (!full) return "";
-  // Known trade-off: a deadline set to exactly 12:00 AM is indistinguishable
-  // from a date-only one, since both are local midnight, and reopens as
-  // date-only. Storing a separate "has time" flag would need a schema change;
-  // "due that day" is by far the more common intent, so it wins.
+  // Local midnight opens as date-only: that is how the backend stores a
+  // deadline with no time, and it is the far more common case. Selecting 12 AM
+  // explicitly is handled in the picker itself, which keeps its own time state
+  // so the hour column never snaps away from what was just pressed.
   return full.endsWith("T00:00") ? full.slice(0, 10) : full;
 }
