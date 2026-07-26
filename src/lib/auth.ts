@@ -16,8 +16,28 @@ const REFRESH_SECRET = new TextEncoder().encode(
 
 const ACCESS_COOKIE = "elenor_access";
 const REFRESH_COOKIE = "elenor_refresh";
-const REFRESH_TTL_DAYS = Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7);
-const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL ?? "15m";
+/**
+ * Strip surrounding quotes and whitespace from an env value.
+ *
+ * Dashboard UIs (Vercel included) store exactly what is pasted, so a value
+ * copied out of a .env file arrives as `"8h"` with the quote characters intact.
+ * dotenv strips those locally, which makes the difference invisible until
+ * production breaks — jose rejects `"8h"` with "Invalid time period format".
+ */
+function cleanEnv(value: string | undefined) {
+  return value?.trim().replace(/^['"]|['"]$/g, "").trim() || undefined;
+}
+
+const REFRESH_TTL_DAYS = Number(cleanEnv(process.env.REFRESH_TOKEN_TTL_DAYS) ?? 7) || 7;
+const RAW_ACCESS_TTL = cleanEnv(process.env.ACCESS_TOKEN_TTL) ?? "15m";
+/** Fall back to a sane default rather than throwing on a malformed value. */
+const ACCESS_TOKEN_TTL = /^\d+\s*[smhd]$/.test(RAW_ACCESS_TTL) ? RAW_ACCESS_TTL : "15m";
+if (ACCESS_TOKEN_TTL !== RAW_ACCESS_TTL) {
+  console.error(
+    `[auth] ACCESS_TOKEN_TTL="${RAW_ACCESS_TTL}" is not a valid duration ` +
+      `(expected e.g. 15m, 8h, 7d). Falling back to ${ACCESS_TOKEN_TTL}.`
+  );
+}
 
 /**
  * Parse a jose-style duration ("30s", "15m", "8h", "7d") into seconds so the
