@@ -116,6 +116,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.taskLabel.createMany({ data: data.labelIds.map((labelId) => ({ taskId: id, labelId })) });
     }
 
+    // activity log for deadline changes
+    if (data.deadline !== undefined) {
+      const nextDeadline = data.deadline ? new Date(data.deadline) : null;
+      if (nextDeadline?.getTime() !== before.deadline?.getTime()) {
+        await logActivity({
+          actorId: user.id,
+          taskId: id,
+          verb: "changed deadline",
+          meta: { from: before.deadline, to: nextDeadline },
+        });
+        // let assignees know the date moved
+        const others = before.assignees.map((a) => a.userId).filter((uid) => uid !== user.id);
+        if (others.length) {
+          await notifyMany(others, {
+            type: "DEADLINE_REMINDER",
+            title: `Deadline changed: ${before.title}`,
+            body: `${user.firstName} moved ${before.code} to ${nextDeadline ? nextDeadline.toDateString() : "no deadline"}`,
+            link: `/tasks?task=${id}`,
+          });
+        }
+      }
+    }
+
     // activity log for status/progress
     if (data.status && data.status !== before.status) {
       await logActivity({ actorId: user.id, taskId: id, verb: "changed status", meta: { from: before.status, to: data.status } });

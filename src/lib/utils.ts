@@ -19,6 +19,19 @@ export function formatDate(d?: Date | string | null) {
   return dtf.format(new Date(d));
 }
 
+/**
+ * Format a date for an <input type="date"> value (yyyy-MM-dd).
+ * Uses local date parts rather than toISOString(), which would shift the day
+ * for timezones behind UTC.
+ */
+export function toDateInputValue(d?: Date | string | null) {
+  if (!d) return "";
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function relativeTime(d?: Date | string | null) {
   if (!d) return "";
   const date = new Date(d);

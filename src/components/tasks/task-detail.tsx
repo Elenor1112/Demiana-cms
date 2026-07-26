@@ -19,7 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
-import { formatDate, relativeTime, fullName } from "@/lib/utils";
+import { toDateInputValue, relativeTime, fullName } from "@/lib/utils";
 import { useSession, useCan } from "@/components/session-context";
 import type { TaskStatus } from "@prisma/client";
 
@@ -155,7 +155,14 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                   ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
                 </MetaRow>
                 <MetaRow label="Deadline">
-                  <span className="text-sm">{formatDate(task.deadline)}</span>
+                  <Input
+                    type="date"
+                    className="h-8"
+                    value={toDateInputValue(task.deadline)}
+                    onChange={(e) =>
+                      patch.mutate({ deadline: e.target.value ? e.target.value : null })
+                    }
+                  />
                 </MetaRow>
                 <MetaRow label="Project">
                   <span className="text-sm">{task.project?.name ?? "—"}</span>
