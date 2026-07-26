@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAccessToken, ACCESS_COOKIE } from "@/lib/auth-edge";
+import { verifyAccessToken, ACCESS_COOKIE, REFRESH_COOKIE } from "@/lib/auth-edge";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/refresh"];
 
@@ -29,9 +29,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Pages: redirect to login
+  // Pages: if the access token has expired but a refresh cookie is still
+  // present, silently re-authenticate instead of bouncing the user to /login.
   if (!payload) {
     const url = req.nextUrl.clone();
+    const hasRefresh = Boolean(req.cookies.get(REFRESH_COOKIE)?.value);
+    if (hasRefresh) {
+      url.pathname = "/api/auth/refresh/silent";
+      url.search = "";
+      url.searchParams.set("to", pathname + req.nextUrl.search);
+      return NextResponse.redirect(url);
+    }
     url.pathname = "/login";
     url.searchParams.set("from", pathname);
     return NextResponse.redirect(url);

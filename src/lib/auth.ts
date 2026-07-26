@@ -17,6 +17,23 @@ const REFRESH_SECRET = new TextEncoder().encode(
 const ACCESS_COOKIE = "elenor_access";
 const REFRESH_COOKIE = "elenor_refresh";
 const REFRESH_TTL_DAYS = Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7);
+const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL ?? "15m";
+
+/**
+ * Parse a jose-style duration ("30s", "15m", "8h", "7d") into seconds so the
+ * access cookie's maxAge always matches the JWT's own expiry. These previously
+ * drifted apart: the cookie was hardcoded to 15 minutes while the token TTL was
+ * configurable, so raising ACCESS_TOKEN_TTL had no effect.
+ */
+export function parseDurationSeconds(input: string, fallback = 900) {
+  const match = /^(\d+)\s*([smhd])$/.exec(input.trim());
+  if (!match) return fallback;
+  const value = Number(match[1]);
+  const unit = match[2] as "s" | "m" | "h" | "d";
+  return value * { s: 1, m: 60, h: 3600, d: 86400 }[unit];
+}
+
+const ACCESS_MAX_AGE = parseDurationSeconds(ACCESS_TOKEN_TTL);
 
 // ─── Password ───
 export async function hashPassword(password: string) {
@@ -35,7 +52,7 @@ export async function signAccessToken(payload: {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(process.env.ACCESS_TOKEN_TTL ?? "15m")
+    .setExpirationTime(ACCESS_TOKEN_TTL)
     .sign(ACCESS_SECRET);
 }
 
@@ -86,7 +103,7 @@ export async function setAuthCookies(access: string, refresh: string) {
     secure,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 15,
+    maxAge: ACCESS_MAX_AGE,
   });
   jar.set(REFRESH_COOKIE, refresh, {
     httpOnly: true,

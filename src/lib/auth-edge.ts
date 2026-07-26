@@ -8,6 +8,7 @@ const ACCESS_SECRET = new TextEncoder().encode(
 );
 
 export const ACCESS_COOKIE = "elenor_access";
+export const REFRESH_COOKIE = "elenor_refresh";
 
 export async function verifyAccessToken(token: string) {
   try {
