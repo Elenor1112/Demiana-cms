@@ -7,9 +7,14 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // allow static + public
+  // /sw.js and /icons/* must be served directly: the browser fetches the
+  // service worker outside any session and will refuse a redirect, and the
+  // worker itself renders notification icons with no cookies attached.
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
+    pathname === "/sw.js" ||
+    pathname.startsWith("/icons/") ||
     PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p))
   ) {
     return NextResponse.next();

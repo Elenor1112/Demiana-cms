@@ -141,6 +141,7 @@ model User {
   permissionReqs  PermissionRequest[]
   resignations    Resignation[]
   notifications   Notification[]
+  pushSubs        PushSubscription[]
   auditLogs       AuditLog[]
   refreshTokens   RefreshToken[]
   eotmScores      EotmScore[]
@@ -717,6 +718,22 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+/// A browser Web Push endpoint (one row per device/browser per user).
+model PushSubscription {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  endpoint   String   @unique
+  p256dh     String // client public key
+  auth       String // client auth secret
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // ─────────────────────────────────────────────────────────────

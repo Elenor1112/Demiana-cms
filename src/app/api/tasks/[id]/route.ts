@@ -104,9 +104,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (added.length) {
         await notifyMany(added.filter((uid) => uid !== user.id), {
           type: "TASK_ASSIGNED",
-          title: `Assigned: ${before.title}`,
-          body: `${user.firstName} assigned you ${before.code}`,
+          title: "New Task Assigned",
+          body: `${user.firstName} ${user.lastName} assigned "${before.title}" to you.`,
           link: `/tasks?task=${id}`,
+          meta: { taskId: id, assignedBy: `${user.firstName} ${user.lastName}` },
         });
       }
     }
@@ -146,9 +147,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (data.status === "WAITING_APPROVAL") {
         await notifyMany([before.createdById], {
           type: "APPROVAL_REQUIRED",
-          title: `Approval needed: ${before.title}`,
-          body: `${before.code} is waiting for your review`,
+          title: "Approval needed",
+          body: `"${before.title}" (${before.code}) is waiting for your review.`,
           link: `/tasks?task=${id}`,
+          meta: { taskId: id, assignedBy: `${user.firstName} ${user.lastName}` },
         });
       }
       await rollupSubtaskProgress(id);

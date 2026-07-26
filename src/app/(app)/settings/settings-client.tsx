@@ -14,6 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useSession } from "@/components/session-context";
 import { useTheme } from "@/components/theme-provider";
+import { PushSettingsCard } from "@/components/shell/push-settings";
 import { ROLE_META } from "@/lib/rbac";
 
 export function SettingsClient() {
@@ -53,6 +54,8 @@ export function SettingsClient() {
           </div>
         </CardContent>
       </Card>
+
+      <PushSettingsCard />
 
       <ChangePasswordCard />
 

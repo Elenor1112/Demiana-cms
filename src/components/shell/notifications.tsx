@@ -3,8 +3,9 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Check } from "lucide-react";
+import { Bell, Check, BellRing } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
+import { usePush } from "@/lib/use-push";
 
 type Notif = {
   id: string;
@@ -20,6 +21,7 @@ export function NotificationBell() {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+  const push = usePush();
 
   const { data } = useQuery({
     queryKey: ["notifications"],
@@ -38,6 +40,18 @@ export function NotificationBell() {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  // A push arriving refreshes the bell immediately rather than after the poll.
+  React.useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "NOTIFICATION_RECEIVED") {
+        qc.invalidateQueries({ queryKey: ["notifications"] });
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [qc]);
 
   async function markAll() {
     await fetch("/api/notifications/read-all", { method: "POST" });
@@ -79,6 +93,18 @@ export function NotificationBell() {
                 </button>
               )}
             </div>
+            {push.state === "default" && (
+              <button
+                onClick={async () => {
+                  await push.enable();
+                }}
+                disabled={push.busy}
+                className="flex w-full items-center gap-2 border-b border-border bg-primary/5 px-4 py-2.5 text-left text-xs text-primary transition-colors hover:bg-primary/10 disabled:opacity-60"
+              >
+                <BellRing className="size-3.5 shrink-0" />
+                <span>Turn on browser notifications for tasks &amp; mentions</span>
+              </button>
+            )}
             <div className="max-h-96 overflow-y-auto">
               {!data?.notifications?.length ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">

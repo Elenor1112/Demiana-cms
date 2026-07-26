@@ -105,9 +105,10 @@ export async function POST(req: NextRequest) {
     if (data.assigneeIds.length) {
       await notifyMany(data.assigneeIds.filter((id) => id !== user.id), {
         type: "TASK_ASSIGNED",
-        title: `New task: ${task.title}`,
-        body: `${user.firstName} assigned you ${code}`,
+        title: "New Task Assigned",
+        body: `${user.firstName} ${user.lastName} assigned "${task.title}" to you.`,
         link: `/tasks?task=${task.id}`,
+        meta: { taskId: task.id, assignedBy: `${user.firstName} ${user.lastName}` },
       });
     }
 

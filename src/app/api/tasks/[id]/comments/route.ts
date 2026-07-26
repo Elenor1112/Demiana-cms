@@ -29,19 +29,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await logActivity({ actorId: user.id, taskId: id, verb: "commented" });
 
-    // notify assignees + creator + mentions
-    const recipients = new Set<string>([
+    // Mentions and plain comments are notified separately: only a real mention
+    // should raise a push, so typing everyone as MENTIONED would spam people
+    // who merely follow the task.
+    const actor = `${user.firstName} ${user.lastName}`;
+    const meta = { taskId: id, assignedBy: actor };
+    const mentioned = new Set<string>(data.mentions);
+    mentioned.delete(user.id);
+
+    const watchers = new Set<string>([
       ...task.assignees.map((a) => a.userId),
       task.createdById,
-      ...data.mentions,
     ]);
-    recipients.delete(user.id);
-    if (recipients.size) {
-      await notifyMany([...recipients], {
-        type: data.mentions.length ? "MENTIONED" : "COMMENT_ADDED",
+    watchers.delete(user.id);
+    for (const uid of mentioned) watchers.delete(uid);
+
+    if (mentioned.size) {
+      await notifyMany([...mentioned], {
+        type: "MENTIONED",
+        title: `${actor} mentioned you`,
+        body: data.body.slice(0, 100),
+        link: `/tasks?task=${id}`,
+        meta,
+      });
+    }
+    if (watchers.size) {
+      await notifyMany([...watchers], {
+        type: "COMMENT_ADDED",
         title: `${user.firstName} commented on ${task.code}`,
         body: data.body.slice(0, 100),
         link: `/tasks?task=${id}`,
+        meta,
       });
     }
 
