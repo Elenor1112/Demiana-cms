@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, Phone, Calendar, Briefcase, Users, CheckSquare, Plane,
-  ShieldCheck, Award, AlertTriangle, FileText, Cake, Pencil, UserX, Loader2,
+  ShieldCheck, Award, AlertTriangle, FileText, Cake, Pencil, UserX, Loader2, KeyRound,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
   const [tab, setTab] = React.useState<(typeof TABS)[number]>("Overview");
   const [editOpen, setEditOpen] = React.useState(false);
   const [deactivateOpen, setDeactivateOpen] = React.useState(false);
+  const [resetPwOpen, setResetPwOpen] = React.useState(false);
   const roleMeta = ROLE_META[employee.role.key as keyof typeof ROLE_META];
 
   const visibleTabs = TABS.filter((t) => t !== "Access" || can("Employee.EditPermissions"));
@@ -63,11 +64,16 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
                   <Badge color="#8B5CF6"><ShieldCheck className="size-3" /> Super Admin</Badge>
                 )}
               </div>
-              {(can("Employee.Edit") || can("Employee.Delete")) && (
+              {(can("Employee.Edit") || can("Employee.Delete") || can("Employee.EditPermissions")) && (
                 <div className="flex gap-2">
                   {can("Employee.Edit") && (
                     <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                       <Pencil className="size-3.5" /> Edit
+                    </Button>
+                  )}
+                  {can("Employee.EditPermissions") && !isSelf && employee.status !== "DEACTIVATED" && (
+                    <Button size="sm" variant="outline" onClick={() => setResetPwOpen(true)}>
+                      <KeyRound className="size-3.5" /> Reset password
                     </Button>
                   )}
                   {can("Employee.Delete") && !isSelf && employee.status !== "DEACTIVATED" && (
@@ -129,6 +135,9 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
       )}
       {can("Employee.Delete") && (
         <DeactivateDialog employee={employee} open={deactivateOpen} onClose={() => setDeactivateOpen(false)} />
+      )}
+      {can("Employee.EditPermissions") && (
+        <ResetPasswordDialog employee={employee} open={resetPwOpen} onClose={() => setResetPwOpen(false)} />
       )}
     </div>
   );
@@ -253,6 +262,65 @@ function DeactivateDialog({ employee, open, onClose }: { employee: Employee; ope
         <Button className="bg-destructive hover:bg-destructive/90" onClick={() => remove.mutate()} disabled={remove.isPending}>
           {remove.isPending && <Loader2 className="size-4 animate-spin" />} Deactivate
         </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+function ResetPasswordDialog({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
+  const [password, setPassword] = React.useState("");
+  const [mustChange, setMustChange] = React.useState(true);
+
+  const valid =
+    password.length >= 10 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /[0-9]/.test(password);
+
+  const reset = useMutation({
+    mutationFn: () =>
+      apiSend(`/api/employees/${employee.id}/password`, "POST", {
+        newPassword: password,
+        mustChangePassword: mustChange,
+      }),
+    onSuccess: () => {
+      toast.success("Password reset. Share it with the employee securely.");
+      setPassword("");
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Reset password"
+      description={`Set a new password for ${employee.firstName} ${employee.lastName}. All of their sessions will be signed out.`}
+    >
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>New password</Label>
+          <Input
+            type="text"
+            autoComplete="off"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Min 10 chars, upper + lower + number"
+          />
+          {password.length > 0 && !valid && (
+            <p className="text-xs text-destructive">
+              Must be 10+ characters with an uppercase letter, a lowercase letter and a number.
+            </p>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} />
+          Require the employee to change it at next sign-in
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => reset.mutate()} disabled={!valid || reset.isPending}>
+            {reset.isPending && <Loader2 className="size-4 animate-spin" />} Reset password
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

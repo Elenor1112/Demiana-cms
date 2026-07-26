@@ -81,7 +81,9 @@ npm run dev
 Open http://localhost:3000
 
 ### 6. Log in
-All demo accounts use the password **`Elenor@2026`**:
+The seed script creates these **local development** accounts, all sharing the password
+defined at the top of `prisma/seed.ts`. They are not listed on the login screen and must
+never be seeded into a production database — run `npm run db:reset-ceo` to strip them.
 
 | Email | Role |
 |---|---|

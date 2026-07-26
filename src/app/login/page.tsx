@@ -9,14 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const DEMO = [
-  { email: "ceo@elenor.com", label: "CEO" },
-  { email: "ops@elenor.com", label: "Operations" },
-  { email: "account@elenor.com", label: "Account Mgr" },
-  { email: "art@elenor.com", label: "Art Director" },
-  { email: "designer@elenor.com", label: "Designer" },
-];
-
 export default function LoginPage() {
   return (
     <Suspense fallback={null}>
@@ -29,7 +21,7 @@ function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("Elenor@2026");
+  const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -99,6 +91,7 @@ function LoginForm() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -114,24 +107,6 @@ function LoginForm() {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 border-t border-border pt-4">
-            <p className="mb-2 text-center text-xs text-muted-foreground">
-              Demo accounts · password <span className="font-mono">Elenor@2026</span>
-            </p>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {DEMO.map((d) => (
-                <button
-                  key={d.email}
-                  type="button"
-                  onClick={() => setEmail(d.email)}
-                  className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </motion.div>
     </div>

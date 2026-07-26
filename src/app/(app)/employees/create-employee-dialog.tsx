@@ -45,7 +45,7 @@ export function CreateEmployeeDialog({
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { password: "Elenor@2026" },
+    defaultValues: { password: "" },
   });
 
   const mutation = useMutation({
