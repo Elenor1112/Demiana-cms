@@ -31,8 +31,11 @@ export function Topbar() {
     router.refresh();
   }
 
+  // z-30: backdrop-blur creates a stacking context that would otherwise trap
+  // this header's dropdowns below <main>. Raising the header lets them paint
+  // over page content.
   return (
-    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md">
+    <header className="relative z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md">
       {/* command palette trigger */}
       <button
         onClick={() => (window as any).__openCommandPalette?.()}
