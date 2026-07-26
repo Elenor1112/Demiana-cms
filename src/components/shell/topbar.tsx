@@ -65,7 +65,7 @@ export function Topbar() {
           onClick={() => setMenu((m) => !m)}
           className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 transition-colors hover:bg-accent"
         >
-          <Avatar firstName={user.firstName} lastName={user.lastName} size={30} />
+          <Avatar firstName={user.firstName} lastName={user.lastName} src={user.avatarUrl} size={30} />
           <div className="hidden text-left md:block">
             <div className="text-sm font-medium leading-tight">
               {user.firstName} {user.lastName}

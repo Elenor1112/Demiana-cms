@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog } from "@/components/ui/dialog";
-import { Avatar } from "@/components/ui/avatar";
+import { AvatarUpload } from "@/components/ui/avatar-upload";
 import { Badge } from "@/components/ui/badge";
 import { useSession } from "@/components/session-context";
 import { useTheme } from "@/components/theme-provider";
@@ -27,13 +27,19 @@ export function SettingsClient() {
       <Card>
         <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4">
-            <Avatar firstName={me.firstName} lastName={me.lastName} size={64} />
+          <div className="space-y-4">
             <div>
               <div className="text-lg font-semibold">{me.firstName} {me.lastName}</div>
               <div className="text-sm text-muted-foreground">{me.email}</div>
               <div className="mt-1"><Badge color="#06B6D4">{ROLE_META[me.roleKey].name}</Badge></div>
             </div>
+            <AvatarUpload
+              userId={me.id}
+              firstName={me.firstName}
+              lastName={me.lastName}
+              avatarUrl={me.avatarUrl}
+              size={72}
+            />
           </div>
         </CardContent>
       </Card>

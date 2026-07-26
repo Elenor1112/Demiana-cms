@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, Check } from "lucide-react";
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { DeadlinePicker } from "@/components/ui/deadline-picker";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { PRIORITY_META } from "@/lib/constants";
 
@@ -35,7 +36,7 @@ export function CreateTaskDialog({
   defaultParentId?: string;
 }) {
   const qc = useQueryClient();
-  const { register, handleSubmit, reset } = useForm<any>();
+  const { register, handleSubmit, reset, control } = useForm<any>();
   const { data: meta } = useQuery({
     queryKey: ["task-meta"],
     queryFn: () => apiGet<Meta>("/api/tasks/meta"),
@@ -49,6 +50,8 @@ export function CreateTaskDialog({
     mutationFn: (values: any) =>
       apiSend("/api/tasks", "POST", {
         ...values,
+        // The picker uses "" for "no deadline"; the API wants null.
+        deadline: values.deadline || null,
         estimatedHours: values.estimatedHours ? Number(values.estimatedHours) : null,
         projectId: values.projectId || defaultProjectId || null,
         parentId: defaultParentId || null,
@@ -82,9 +85,16 @@ export function CreateTaskDialog({
               {Object.entries(PRIORITY_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
             </Select>
           </div>
-          <div className="space-y-1.5">
-            <Label>Deadline</Label>
-            <Input type="datetime-local" {...register("deadline")} />
+          <div className="space-y-1.5 col-span-2 sm:col-span-1">
+            <Label htmlFor="task-deadline">Deadline</Label>
+            <Controller
+              name="deadline"
+              control={control}
+              defaultValue=""
+              render={({ field }) => (
+                <DeadlinePicker id="task-deadline" value={field.value ?? ""} onChange={field.onChange} />
+              )}
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Est. hours</Label>

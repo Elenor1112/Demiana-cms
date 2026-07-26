@@ -175,6 +175,7 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
     roleKey,
     isSuperAdmin: user.role.isSuperAdmin,
     departmentId: user.departmentId,
+    avatarUrl: user.avatarUrl,
     permissions: [...rolePerms],
   };
 }

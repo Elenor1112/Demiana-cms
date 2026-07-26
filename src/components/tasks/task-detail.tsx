@@ -19,7 +19,8 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
-import { toDateTimeInputValue, formatDateTime, relativeTime, fullName } from "@/lib/utils";
+import { formatDateTime, relativeTime, fullName } from "@/lib/utils";
+import { DeadlinePicker, toDeadlineInput } from "@/components/ui/deadline-picker";
 import { useSession, useCan } from "@/components/session-context";
 import type { TaskStatus } from "@prisma/client";
 
@@ -169,15 +170,11 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                     <AvatarGroup users={task.assignees.map((a: any) => a.user)} size={26} />
                   ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
                 </MetaRow>
-                <MetaRow label="Deadline">
+                <MetaRow label="Deadline" wide={canEditDetails}>
                   {canEditDetails ? (
-                    <Input
-                      type="datetime-local"
-                      className="h-8"
-                      value={toDateTimeInputValue(task.deadline)}
-                      onChange={(e) =>
-                        patch.mutate({ deadline: e.target.value ? e.target.value : null })
-                      }
+                    <DeadlinePicker
+                      value={toDeadlineInput(task.deadline)}
+                      onChange={(next) => patch.mutate({ deadline: next || null })}
                     />
                   ) : (
                     <span className="text-sm">{formatDateTime(task.deadline)}</span>
@@ -313,9 +310,9 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   );
 }
 
-function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+function MetaRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div>
+    <div className={wide ? "col-span-2" : undefined}>
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       {children}
     </div>

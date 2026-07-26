@@ -142,6 +142,7 @@ model User {
   resignations    Resignation[]
   notifications   Notification[]
   pushSubs        PushSubscription[]
+  avatar          UserAvatar?
   auditLogs       AuditLog[]
   refreshTokens   RefreshToken[]
   eotmScores      EotmScore[]
@@ -164,6 +165,21 @@ model User {
   @@index([roleId])
   @@index([departmentId])
   @@index([managerId])
+}
+
+/// A user's profile picture, stored as bytes like job description files so the
+/// app needs no external object store. One row per user — replacing the picture
+/// overwrites it rather than accumulating versions, since there is no reason to
+/// audit avatar history.
+model UserAvatar {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Bytes
+  mimeType  String
+  size      Int
+  /// sha256, used as the ETag and as a cache-busting token in avatarUrl.
+  checksum  String
+  updatedAt DateTime @updatedAt
 }
 
 model RefreshToken {

@@ -1,5 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { getSessionUser } from "./auth";
 import { can, type PermissionKey, type SessionUser } from "./rbac";
 import { db } from "./db";
@@ -39,6 +40,17 @@ export function handler<T>(fn: () => Promise<T>) {
 export function toErrorResponse(err: unknown) {
   if (err instanceof ApiError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
+  }
+  // Routes call schema.parse() directly, which throws on bad input. Without
+  // this, a client validation error surfaced as a 500 and the caller got no
+  // idea which field was wrong.
+  if (err instanceof ZodError) {
+    const issue = err.issues[0];
+    const path = issue?.path.join(".");
+    return NextResponse.json(
+      { error: path ? `${path}: ${issue.message}` : (issue?.message ?? "Invalid input") },
+      { status: 400 }
+    );
   }
   console.error(err);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -245,6 +245,7 @@ export type SessionUser = {
   isSuperAdmin: boolean;
   /** Needed to scope Task.ViewDepartment. */
   departmentId: string | null;
+  avatarUrl: string | null;
   permissions: string[]; // effective, resolved
 };
 

@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Mail, Phone, Calendar, Briefcase, Users, CheckSquare, Plane,
-  ShieldCheck, Award, AlertTriangle, FileText, Cake, Pencil, UserX, Loader2, KeyRound,
+  ShieldCheck, Award, AlertTriangle, FileText, Cake, Pencil, UserX, Loader2, KeyRound, Camera,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ import { Select } from "@/components/ui/select";
 import { ROLE_META } from "@/lib/rbac";
 import { WARNING_META } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
-import { apiGet, apiSend } from "@/lib/fetcher";
+import { apiGet, apiSend, apiUpload } from "@/lib/fetcher";
 import { useCan, useSession } from "@/components/session-context";
 import { PermissionEditor } from "./permission-editor";
 import { JobDescriptionPanel } from "./job-description-panel";
@@ -63,8 +63,14 @@ export function EmployeeProfile({ employee }: { employee: Employee }) {
         <div className="h-24 bg-gradient-to-r from-primary/20 via-info/15 to-transparent" />
         <div className="px-6 pb-5">
           <div className="-mt-10 flex flex-wrap items-end gap-4">
-            <div className="rounded-full ring-4 ring-card">
+            <div className="relative rounded-full ring-4 ring-card">
               <Avatar firstName={employee.firstName} lastName={employee.lastName} src={employee.avatarUrl} size={80} />
+              {(isSelf || can("Employee.Edit")) && (
+                <AvatarPickerButton
+                  userId={employee.id}
+                  hasAvatar={Boolean(employee.avatarUrl)}
+                />
+              )}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -346,6 +352,55 @@ function ResetPasswordDialog({ employee, open, onClose }: { employee: Employee; 
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * Camera badge over the profile photo. Uploads immediately on pick; the API
+ * allows this for yourself, or for anyone if you hold Employee.Edit.
+ */
+function AvatarPickerButton({ userId, hasAvatar }: { userId: string; hasAvatar: boolean }) {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const upload = useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("avatar", file);
+      return apiUpload<{ avatarUrl: string }>(`/api/employees/${userId}/avatar`, form);
+    },
+    onSuccess: () => {
+      toast.success("Profile picture updated");
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      router.refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={upload.isPending}
+        aria-label={hasAvatar ? "Change profile picture" : "Upload profile picture"}
+        className="absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+      >
+        {upload.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Camera className="size-3.5" />}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) upload.mutate(file);
+          e.target.value = "";
+        }}
+      />
+    </>
   );
 }
 
