@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { logActivity, rollupSubtaskProgress, statusDefaultProgress } from "@/lib/tasks";
+import { logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask } from "@/lib/tasks";
+import { can } from "@/lib/rbac";
 import { notifyMany } from "@/lib/notify";
 import type { TaskStatus } from "@prisma/client";
 
@@ -35,10 +36,12 @@ const taskInclude = {
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireUser();
+    const user = await requireUser();
     const { id } = await params;
     const task = await db.task.findUnique({ where: { id }, include: taskInclude });
     if (!task) throw new ApiError(404, "Task not found");
+    // 404 rather than 403 so an unrelated task's existence is not disclosed.
+    if (!(await canViewTask(user, id))) throw new ApiError(404, "Task not found");
     return NextResponse.json({ task });
   } catch (e) {
     return toErrorResponse(e);
@@ -72,6 +75,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       include: { assignees: true },
     });
     if (!before) throw new ApiError(404, "Task not found");
+
+    if (!(await canViewTask(user, id))) throw new ApiError(404, "Task not found");
+
+    // Title, description, priority, deadline, assignment and project/department
+    // placement are management decisions: CEO, Operations Manager, Account
+    // Manager and Art Director only. Everyone else on a task may still move it
+    // through statuses, log progress and work the checklist.
+    const PRIVILEGED_FIELDS = [
+      "title", "description", "priority", "deadline",
+      "estimatedHours", "projectId", "departmentId", "assigneeIds", "labelIds",
+    ] as const;
+    const attempted = PRIVILEGED_FIELDS.filter((f) => data[f] !== undefined);
+    if (attempted.length && !can(user, "Task.EditDetails")) {
+      throw new ApiError(
+        403,
+        `You can update status, progress and the checklist, but not: ${attempted.join(", ")}.`
+      );
+    }
 
     // progress auto-set on status change unless explicitly provided
     let progress = data.progress;

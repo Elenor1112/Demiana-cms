@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, toErrorResponse, ApiError } from "@/lib/api";
-import { logActivity } from "@/lib/tasks";
+import { logActivity, canViewTask } from "@/lib/tasks";
 import { notifyMany } from "@/lib/notify";
 
 const schema = z.object({
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       include: { assignees: true },
     });
     if (!task) throw new ApiError(404, "Task not found");
+    if (!(await canViewTask(user, id))) throw new ApiError(404, "Task not found");
 
     const comment = await db.comment.create({
       data: { body: data.body, authorId: user.id, taskId: id, mentions: data.mentions },

@@ -1,6 +1,47 @@
 import "server-only";
 import { db } from "./db";
-import type { TaskStatus } from "@prisma/client";
+import { can, type SessionUser } from "./rbac";
+import type { Prisma, TaskStatus } from "@prisma/client";
+
+/**
+ * Rows a user is allowed to see.
+ *
+ * Task.ViewAll (CEO, Operations Manager, Account Manager) sees everything.
+ * Everyone else sees only tasks they are involved in — assigned to, following,
+ * or that they created. Creator is included so a lead who assigns work out
+ * (e.g. an Art Director briefing a designer) does not lose sight of it.
+ *
+ * Returns undefined when no filter is needed, so callers can spread it.
+ */
+export function taskVisibilityFilter(user: SessionUser): Prisma.TaskWhereInput | undefined {
+  if (can(user, "Task.ViewAll")) return undefined;
+
+  const OR: Prisma.TaskWhereInput[] = [
+    { assignees: { some: { userId: user.id } } },
+    { followers: { some: { userId: user.id } } },
+    { createdById: user.id },
+    // Keep a parent visible when the user only owns one of its subtasks.
+    { subtasks: { some: { assignees: { some: { userId: user.id } } } } },
+  ];
+
+  // Department leads (Art Director) additionally see their own unit's work, so
+  // they can set priorities and deadlines on their team's tasks.
+  if (can(user, "Task.ViewDepartment") && user.departmentId) {
+    OR.push({ departmentId: user.departmentId });
+  }
+
+  return { OR };
+}
+
+/** Whether this user may see this specific task. */
+export async function canViewTask(user: SessionUser, taskId: string) {
+  if (can(user, "Task.ViewAll")) return true;
+  const found = await db.task.findFirst({
+    where: { id: taskId, ...taskVisibilityFilter(user) },
+    select: { id: true },
+  });
+  return Boolean(found);
+}
 
 /** Generate the next task code, e.g. ELN-143. */
 export async function nextTaskCode(): Promise<string> {

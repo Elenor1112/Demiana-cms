@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
-import { nextTaskCode, logActivity } from "@/lib/tasks";
+import { nextTaskCode, logActivity, taskVisibilityFilter } from "@/lib/tasks";
 import { notifyMany } from "@/lib/notify";
 import type { Prisma, TaskStatus } from "@prisma/client";
 
@@ -24,7 +24,11 @@ export async function GET(req: NextRequest) {
     const openStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"];
     const closedStatuses: TaskStatus[] = ["DONE", "CANCELLED"];
 
+    // Scope to what this user is allowed to see before any other filter.
+    const visibility = taskVisibilityFilter(user);
+
     const where: Prisma.TaskWhereInput = {
+      ...(visibility ? { AND: [visibility] } : {}),
       parentId: sp.get("includeSubtasks") ? undefined : null,
       ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }] } : {}),
       ...(status.length ? { status: { in: status as TaskStatus[] } } : {}),

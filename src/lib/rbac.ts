@@ -13,8 +13,11 @@ import type { RoleKey } from "@prisma/client";
 export const PERMISSIONS = {
   // Tasks
   "Task.View": "View tasks",
+  "Task.ViewAll": "View every task in the agency (not just your own)",
+  "Task.ViewDepartment": "View all tasks in your own department",
   "Task.Create": "Create tasks",
   "Task.Edit": "Edit tasks",
+  "Task.EditDetails": "Edit task priority, deadline, title & description",
   "Task.Delete": "Delete tasks",
   "Task.Assign": "Assign tasks to others",
   "Task.Approve": "Approve tasks / content / designs",
@@ -154,6 +157,8 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     ...baseEmployee,
     "Task.Create",
     "Task.Edit",
+    "Task.EditDetails",
+    "Task.ViewAll",
     "Task.Assign",
     "Task.Approve",
     "Project.Create",
@@ -186,6 +191,11 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     ...baseEmployee,
     "Task.Create",
     "Task.Edit",
+    "Task.EditDetails",
+    // Sees their own department's work rather than the whole agency — an Art
+    // Director needs reach over their designers' tasks to set priorities and
+    // deadlines on them.
+    "Task.ViewDepartment",
     "Task.Assign",
     "Task.Approve",
     "Leave.Approve",
@@ -214,6 +224,8 @@ export type SessionUser = {
   lastName: string;
   roleKey: RoleKey;
   isSuperAdmin: boolean;
+  /** Needed to scope Task.ViewDepartment. */
+  departmentId: string | null;
   permissions: string[]; // effective, resolved
 };
 

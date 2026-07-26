@@ -19,7 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
-import { toDateInputValue, relativeTime, fullName } from "@/lib/utils";
+import { toDateInputValue, formatDate, relativeTime, fullName } from "@/lib/utils";
 import { useSession, useCan } from "@/components/session-context";
 import type { TaskStatus } from "@prisma/client";
 
@@ -56,6 +56,11 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // Title, priority, deadline and description are management fields — the API
+  // rejects them without Task.EditDetails, so render them read-only instead of
+  // letting the user click into a guaranteed 403.
+  const canEditDetails = can("Task.EditDetails");
 
   const [comment, setComment] = React.useState("");
   const addComment = useMutation({
@@ -117,11 +122,15 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <input
-                defaultValue={task.title}
-                onBlur={(e) => e.target.value !== task.title && patch.mutate({ title: e.target.value })}
-                className="w-full bg-transparent text-xl font-bold outline-none focus:bg-accent/30 rounded px-1 -mx-1"
-              />
+              {canEditDetails ? (
+                <input
+                  defaultValue={task.title}
+                  onBlur={(e) => e.target.value !== task.title && patch.mutate({ title: e.target.value })}
+                  className="w-full bg-transparent text-xl font-bold outline-none focus:bg-accent/30 rounded px-1 -mx-1"
+                />
+              ) : (
+                <h2 className="px-1 -mx-1 text-xl font-bold">{task.title}</h2>
+              )}
 
               {task.parent && (
                 <a href={`/tasks?task=${task.parent.id}`} className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">
@@ -143,11 +152,17 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                   </Select>
                 </MetaRow>
                 <MetaRow label="Priority">
-                  <Select value={task.priority} onChange={(e) => patch.mutate({ priority: e.target.value })} className="h-8">
-                    {Object.entries(PRIORITY_META).map(([k, m]) => (
-                      <option key={k} value={k}>{m.label}</option>
-                    ))}
-                  </Select>
+                  {canEditDetails ? (
+                    <Select value={task.priority} onChange={(e) => patch.mutate({ priority: e.target.value })} className="h-8">
+                      {Object.entries(PRIORITY_META).map(([k, m]) => (
+                        <option key={k} value={k}>{m.label}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Badge color={PRIORITY_META[task.priority as keyof typeof PRIORITY_META]?.color}>
+                      {PRIORITY_META[task.priority as keyof typeof PRIORITY_META]?.label ?? task.priority}
+                    </Badge>
+                  )}
                 </MetaRow>
                 <MetaRow label="Assignees">
                   {task.assignees.length ? (
@@ -155,14 +170,18 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                   ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
                 </MetaRow>
                 <MetaRow label="Deadline">
-                  <Input
-                    type="date"
-                    className="h-8"
-                    value={toDateInputValue(task.deadline)}
-                    onChange={(e) =>
-                      patch.mutate({ deadline: e.target.value ? e.target.value : null })
-                    }
-                  />
+                  {canEditDetails ? (
+                    <Input
+                      type="date"
+                      className="h-8"
+                      value={toDateInputValue(task.deadline)}
+                      onChange={(e) =>
+                        patch.mutate({ deadline: e.target.value ? e.target.value : null })
+                      }
+                    />
+                  ) : (
+                    <span className="text-sm">{task.deadline ? formatDate(task.deadline) : "—"}</span>
+                  )}
                 </MetaRow>
                 <MetaRow label="Project">
                   <span className="text-sm">{task.project?.name ?? "—"}</span>
@@ -188,11 +207,17 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
               {/* description */}
               <div className="mt-4">
                 <div className="mb-1.5 text-sm font-medium">Description</div>
-                <Textarea
-                  defaultValue={task.description ?? ""}
-                  placeholder="Add a description…"
-                  onBlur={(e) => e.target.value !== (task.description ?? "") && patch.mutate({ description: e.target.value })}
-                />
+                {canEditDetails ? (
+                  <Textarea
+                    defaultValue={task.description ?? ""}
+                    placeholder="Add a description…"
+                    onBlur={(e) => e.target.value !== (task.description ?? "") && patch.mutate({ description: e.target.value })}
+                  />
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                    {task.description || "No description."}
+                  </p>
+                )}
               </div>
 
               {/* checklist */}
