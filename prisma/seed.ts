@@ -83,14 +83,14 @@ async function main() {
   const users: U[] = [
     { email: "ceo@elenor.com", firstName: "Nadia", lastName: "Kamal", role: "CEO", jobTitle: "Chief Executive Officer", birth: "1982-03-14" },
     { email: "ops@elenor.com", firstName: "Omar", lastName: "Farouk", role: "OPERATIONS_MANAGER", jobTitle: "Operations Manager", managerEmail: "ceo@elenor.com", birth: "1987-11-02" },
-    { email: "account@elenor.com", firstName: "Layla", lastName: "Hassan", role: "ACCOUNT_MANAGER", dept: "Account Management", jobTitle: "Senior Account Manager", managerEmail: "ops@elenor.com", birth: "1990-07-20" },
-    { email: "sales@elenor.com", firstName: "Karim", lastName: "Adel", role: "SALES_MANAGER", dept: "Account Management", jobTitle: "Sales Manager", managerEmail: "ops@elenor.com", birth: "1989-01-09" },
-    { email: "art@elenor.com", firstName: "Salma", lastName: "Nabil", role: "ART_DIRECTOR", dept: "Design Team", jobTitle: "Art Director", managerEmail: "account@elenor.com", birth: "1991-05-30" },
-    { email: "designer@elenor.com", firstName: "Youssef", lastName: "Tarek", role: "DESIGNER", dept: "Design Team", jobTitle: "Senior Designer", managerEmail: "art@elenor.com", birth: "1994-09-12" },
+    { email: "account@elenor.com", firstName: "Layla", lastName: "Hassan", role: "ACCOUNT_MANAGER", dept: "Account Management", jobTitle: "Senior Account Manager", managerEmail: "ops@elenor.com", [...]
+    { email: "sales@elenor.com", firstName: "Karim", lastName: "Adel", role: "SALES_MANAGER", dept: "Account Management", jobTitle: "Sales Manager", managerEmail: "ops@elenor.com", birth: "1989-01[...]
+    { email: "art@elenor.com", firstName: "Salma", lastName: "Nabil", role: "ART_DIRECTOR", dept: "Design Team", jobTitle: "Art Director", managerEmail: "account@elenor.com", birth: "1991-05-30" }[...]
+    { email: "designer@elenor.com", firstName: "Youssef", lastName: "Tarek", role: "DESIGNER", dept: "Design Team", jobTitle: "Senior Designer", managerEmail: "art@elenor.com", birth: "1994-09-12"[...]
     { email: "designer2@elenor.com", firstName: "Mariam", lastName: "Sami", role: "DESIGNER", dept: "Design Team", jobTitle: "Designer", managerEmail: "art@elenor.com", birth: "1996-12-01" },
-    { email: "content@elenor.com", firstName: "Hana", lastName: "Youssef", role: "CONTENT_CREATOR", dept: "Content Creation", jobTitle: "Content Creator", managerEmail: "account@elenor.com", birth: "1995-04-18" },
-    { email: "comms@elenor.com", firstName: "Tariq", lastName: "Mahmoud", role: "COMMUNICATION_SPECIALIST", dept: "Content Creation", jobTitle: "Communication Specialist", managerEmail: "account@elenor.com", birth: "1993-08-25" },
-    { email: "dev@elenor.com", firstName: "Ziad", lastName: "Ashraf", role: "DEVELOPER", dept: "Development", jobTitle: "Full-Stack Developer", managerEmail: "ops@elenor.com", birth: "1992-02-14" },
+    { email: "content@elenor.com", firstName: "Hana", lastName: "Youssef", role: "CONTENT_CREATOR", dept: "Content Creation", jobTitle: "Content Creator", managerEmail: "account@elenor.com", birth[...]
+    { email: "comms@elenor.com", firstName: "Tariq", lastName: "Mahmoud", role: "COMMUNICATION_SPECIALIST", dept: "Content Creation", jobTitle: "Communication Specialist", managerEmail: "account@e[...]
+    { email: "dev@elenor.com", firstName: "Ziad", lastName: "Ashraf", role: "DEVELOPER", dept: "Development", jobTitle: "Full-Stack Developer", managerEmail: "ops@elenor.com", birth: "1992-02-14" [...]
   ];
 
   const userIds: Record<string, string> = {};
@@ -188,13 +188,13 @@ async function main() {
   const now = Date.now();
   const day = 864e5;
   const tasks = [
-    { title: "Design Instagram carousel — Aurora launch", status: "IN_PROGRESS", priority: "HIGH", project: 0, dept: "Design Team", creator: "account@elenor.com", assignees: ["designer@elenor.com"], deadline: 3, progress: 45, labels: ["Design", "Client Facing"] },
-    { title: "Write launch copy for GreenLeaf", status: "TODO", priority: "MEDIUM", project: 2, dept: "Content Creation", creator: "account@elenor.com", assignees: ["content@elenor.com"], deadline: 5, progress: 0, labels: ["Content"] },
-    { title: "Nile Fintech logo variations", status: "WAITING_APPROVAL", priority: "HIGH", project: 1, dept: "Design Team", creator: "art@elenor.com", assignees: ["designer2@elenor.com"], deadline: 2, progress: 90, labels: ["Design", "Client Facing"], approval: "PENDING" as const },
-    { title: "Prepare Aurora campaign brief", status: "DONE", priority: "MEDIUM", project: 0, dept: "Account Management", creator: "account@elenor.com", assignees: ["account@elenor.com"], deadline: -2, progress: 100, labels: ["Client Facing"] },
-    { title: "Social media calendar — July", status: "IN_PROGRESS", priority: "URGENT", project: 0, dept: "Content Creation", creator: "account@elenor.com", assignees: ["comms@elenor.com", "content@elenor.com"], deadline: 1, progress: 60, labels: ["Content", "Urgent"] },
-    { title: "Revise Aurora product mockups", status: "HOLD", priority: "LOW", project: 0, dept: "Design Team", creator: "art@elenor.com", assignees: ["designer@elenor.com"], deadline: 7, progress: 20, labels: ["Design", "Revision"] },
-    { title: "Client feedback — Nile Fintech round 2", status: "TODO", priority: "HIGH", project: 1, dept: "Account Management", creator: "account@elenor.com", assignees: ["account@elenor.com"], deadline: 4, progress: 0, labels: ["Client Facing"] },
+    { title: "Design Instagram carousel — Aurora launch", status: "IN_PROGRESS", priority: "HIGH", project: 0, dept: "Design Team", creator: "account@elenor.com", assignees: ["designer@elenor.c[...]
+    { title: "Write launch copy for GreenLeaf", status: "TODO", priority: "MEDIUM", project: 2, dept: "Content Creation", creator: "account@elenor.com", assignees: ["content@elenor.com"], deadlin[...]
+    { title: "Nile Fintech logo variations", status: "WAITING_APPROVAL", priority: "HIGH", project: 1, dept: "Design Team", creator: "art@elenor.com", assignees: ["designer2@elenor.com"], deadlin[...]
+    { title: "Prepare Aurora campaign brief", status: "DONE", priority: "MEDIUM", project: 0, dept: "Account Management", creator: "account@elenor.com", assignees: ["account@elenor.com"], deadlin[...]
+    { title: "Social media calendar — July", status: "IN_PROGRESS", priority: "URGENT", project: 0, dept: "Content Creation", creator: "account@elenor.com", assignees: ["comms@elenor.com", "con[...]
+    { title: "Revise Aurora product mockups", status: "HOLD", priority: "LOW", project: 0, dept: "Design Team", creator: "art@elenor.com", assignees: ["designer@elenor.com"], deadline: 7, progres[...]
+    { title: "Client feedback — Nile Fintech round 2", status: "TODO", priority: "HIGH", project: 1, dept: "Account Management", creator: "account@elenor.com", assignees: ["account@elenor.com"][...]
   ];
 
   let counter = 100;
@@ -260,9 +260,9 @@ async function main() {
 async function seedPolicies() {
   const policies = [
     { slug: "working-hours", title: "Working Hours & Attendance", category: "Attendance", requiresAck: true, order: 1,
-      body: "Standard working hours are 9:00 AM – 5:00 PM, Sunday to Thursday. Employees must check in on time. Repeated lateness is tracked and may result in a Blue Card warning. Attendance is recorded in Elenor OS." },
+      body: "Standard working hours are 10:00 AM – 6:00 PM, Sunday to Thursday. Employees must check in on time. Repeated lateness is tracked and may result in a Blue Card warning. Attendance is[...]
     { slug: "confidentiality", title: "Confidentiality Policy", category: "Conduct", requiresAck: true, order: 2,
-      body: "All employees must protect confidential company and client information. Sharing client data, project details, or internal documents externally is strictly prohibited and may result in immediate disciplinary action." },
+      body: "All employees must protect confidential company and client information. Sharing client data, project details, or internal documents externally is strictly prohibited and may result i[...]
     { slug: "salary-confidentiality", title: "Salary Confidentiality", category: "Conduct", requiresAck: true, order: 3,
       body: "Compensation details are strictly confidential. Discussing salaries between employees is a breach of policy." },
     { slug: "professional-conduct", title: "Professional Conduct", category: "Conduct", order: 4,
@@ -278,13 +278,13 @@ async function seedPolicies() {
     { slug: "workplace-safety", title: "Workplace Safety", category: "Safety", order: 9,
       body: "Maintain a safe working environment. Report hazards immediately." },
     { slug: "leave-policy", title: "Leave Policy", category: "Leave", requiresAck: true, order: 10,
-      body: "Annual leave: 21 days/year. Sick leave: 10 days/year. Leave requests must be submitted via Elenor OS and approved by the direct manager and then the Operations Manager. An acting employee and task handover are required." },
+      body: "Annual leave: 21 days/year. Sick leave: 10 days/year. Leave requests must be submitted via Elenor OS and approved by the direct manager and then the Operations Manager. An acting emp[...]
     { slug: "resignation-policy", title: "Resignation Policy", category: "Leave", order: 11,
       body: "Resignations require notice. The offboarding checklist (asset return, knowledge transfer, task handover, account deactivation, exit interview) must be completed." },
     { slug: "commission", title: "Quarterly Commission Eligibility", category: "Compensation", order: 12,
       body: "Commission is paid quarterly to eligible roles based on performance targets. Eligibility requires an active, in-good-standing status with no unresolved Red Card warnings." },
     { slug: "disciplinary", title: "Disciplinary Procedure — Card System", category: "Discipline", requiresAck: true, order: 13,
-      body: "Elenor uses a three-tier card system: **Blue Card** (verbal/minor), **Yellow Card** (formal written warning), **Red Card** (final warning / serious breach). Accumulated cards affect performance scores and commission eligibility." },
+      body: "Elenor uses a three-tier card system: **Blue Card** (verbal/minor), **Yellow Card** (formal written warning), **Red Card** (final warning / serious breach). Accumulated cards affect [...]
   ];
   for (const p of policies) {
     await db.policy.upsert({ where: { slug: p.slug }, update: p, create: p });
