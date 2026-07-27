@@ -89,6 +89,26 @@ export function TimestampValue({
   );
 }
 
+/**
+ * What to label a task with in lists, cards and the detail header.
+ *
+ * The client's company name is far more useful at a glance than an opaque
+ * ELN-### code, so it wins when the task has a client. Internal tasks have no
+ * client, so they keep the code rather than showing nothing.
+ *
+ * Display only — `code` remains the stable unique identifier in the database
+ * and in notification/audit text, where a client name would be ambiguous
+ * across that client's other tasks.
+ */
+export function taskRef(task: { code: string; client?: { company: string } | null }) {
+  return task.client?.company?.trim() || task.code;
+}
+
+/** True when taskRef fell back to the code, so callers can pick a mono font. */
+export function isCodeRef(task: { code: string; client?: { company: string } | null }) {
+  return !task.client?.company?.trim();
+}
+
 export type TaskListItem = {
   id: string;
   code: string;
@@ -111,9 +131,22 @@ export function TaskCard({ task, onClick }: { task: TaskListItem; onClick: () =>
       onClick={onClick}
       className="group cursor-pointer rounded-xl border border-border bg-card p-3 shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
     >
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] text-muted-foreground">{task.code}</span>
-        <PriorityFlag priority={task.priority} />
+      {/* gap + min-w-0 so a long company name truncates instead of pushing the
+          priority flag out of the card. */}
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={cn(
+            "min-w-0 truncate text-[11px] text-muted-foreground",
+            // Mono suits an ID; a company name reads better in the body face.
+            isCodeRef(task) ? "font-mono" : "font-medium"
+          )}
+          title={taskRef(task)}
+        >
+          {taskRef(task)}
+        </span>
+        <span className="shrink-0">
+          <PriorityFlag priority={task.priority} />
+        </span>
       </div>
       <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug">{task.title}</p>
 

@@ -43,8 +43,8 @@ model Role {
   isSuperAdmin Boolean          @default(false)
   permissions  RolePermission[]
   users        User[]
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  createdAt    DateTime         @default(now()) @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @db.Timestamptz
 }
 
 model Permission {
@@ -91,15 +91,15 @@ model Department {
   head        User?    @relation("DepartmentHead", fields: [headId], references: [id])
   members     User[]   @relation("DepartmentMembers")
   tasks       Task[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
 }
 
 model User {
   id                 String     @id @default(cuid())
   email              String     @unique
   passwordHash       String
-  passwordChangedAt  DateTime?
+  passwordChangedAt  DateTime?  @db.Timestamptz
   mustChangePassword Boolean    @default(false)
   firstName          String
   lastName           String
@@ -120,50 +120,50 @@ model User {
   manager   User?   @relation("ManagerReports", fields: [managerId], references: [id])
   reports   User[]  @relation("ManagerReports")
 
-  hireDate           DateTime?
-  birthDate          DateTime?
+  hireDate           DateTime? @db.Timestamptz
+  birthDate          DateTime? @db.Timestamptz
   annualLeaveBalance Int       @default(21)
   sickLeaveBalance   Int       @default(10)
 
   permissions UserPermission[]
 
   // Relations
-  createdTasks    Task[]              @relation("TaskCreatedBy")
-  assignedTasks   TaskAssignee[]
-  workedTasks     Task[]              @relation("TaskWorker")
-  workerAssignments   WorkerAssignment[] @relation("WorkerAssignmentWorker")
-  workerDelegations   WorkerAssignment[] @relation("WorkerAssignmentAssignedBy")
-  taskFollows     TaskFollower[]
-  comments        Comment[]
-  activities      Activity[]
-  projectsLed     Project[]           @relation("ProjectLead")
-  projectMembers  ProjectMember[]
-  leaveRequests   LeaveRequest[]      @relation("LeaveRequester")
-  leaveActing     LeaveRequest[]      @relation("LeaveActing")
-  approvalsMade   ApprovalStep[]      @relation("ApprovalApprover")
-  permissionReqs  PermissionRequest[]
-  resignations    Resignation[]
-  notifications   Notification[]
-  pushSubs        PushSubscription[]
-  avatar          UserAvatar?
-  auditLogs       AuditLog[]
-  refreshTokens   RefreshToken[]
-  eotmScores      EotmScore[]
-  eotmWins        EotmWinner[]
-  warnings        Warning[]           @relation("WarnedUser")
-  warningsIssued  Warning[]           @relation("WarnedBy")
-  reviewsreceived PerformanceReview[] @relation("ReviewSubject")
-  reviewsGiven    PerformanceReview[] @relation("ReviewAuthor")
-  documents       EmployeeDocument[]
-  achievements    Achievement[]
-  attendances     Attendance[]
+  createdTasks      Task[]              @relation("TaskCreatedBy")
+  assignedTasks     TaskAssignee[]
+  workedTasks       Task[]              @relation("TaskWorker")
+  workerAssignments WorkerAssignment[]  @relation("WorkerAssignmentWorker")
+  workerDelegations WorkerAssignment[]  @relation("WorkerAssignmentAssignedBy")
+  taskFollows       TaskFollower[]
+  comments          Comment[]
+  activities        Activity[]
+  projectsLed       Project[]           @relation("ProjectLead")
+  projectMembers    ProjectMember[]
+  leaveRequests     LeaveRequest[]      @relation("LeaveRequester")
+  leaveActing       LeaveRequest[]      @relation("LeaveActing")
+  approvalsMade     ApprovalStep[]      @relation("ApprovalApprover")
+  permissionReqs    PermissionRequest[]
+  resignations      Resignation[]
+  notifications     Notification[]
+  pushSubs          PushSubscription[]
+  avatar            UserAvatar?
+  auditLogs         AuditLog[]
+  refreshTokens     RefreshToken[]
+  eotmScores        EotmScore[]
+  eotmWins          EotmWinner[]
+  warnings          Warning[]           @relation("WarnedUser")
+  warningsIssued    Warning[]           @relation("WarnedBy")
+  reviewsreceived   PerformanceReview[] @relation("ReviewSubject")
+  reviewsGiven      PerformanceReview[] @relation("ReviewAuthor")
+  documents         EmployeeDocument[]
+  achievements      Achievement[]
+  attendances       Attendance[]
 
   jobDescription        JobDescription?         @relation("EmployeeJobDescription")
   jobDescriptionUploads JobDescriptionVersion[] @relation("JobDescriptionUploader")
   jobDescriptionAcks    JobDescriptionAck[]     @relation("JobDescriptionAcks")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 
   @@index([roleId])
   @@index([departmentId])
@@ -182,7 +182,7 @@ model UserAvatar {
   size      Int
   /// sha256, used as the ETag and as a cache-busting token in avatarUrl.
   checksum  String
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @updatedAt @db.Timestamptz
 }
 
 model RefreshToken {
@@ -190,11 +190,11 @@ model RefreshToken {
   token     String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
-  expiresAt DateTime
+  expiresAt DateTime @db.Timestamptz
   revoked   Boolean  @default(false)
   userAgent String?
   ip        String?
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 
   @@index([userId])
 }
@@ -221,8 +221,8 @@ model Client {
   notes         String?
   projects      Project[]
   tasks         Task[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @db.Timestamptz
 }
 
 enum ProjectStatus {
@@ -246,14 +246,14 @@ model Project {
   leadId String?
   lead   User?   @relation("ProjectLead", fields: [leadId], references: [id])
 
-  startDate DateTime?
-  deadline  DateTime?
+  startDate DateTime? @db.Timestamptz
+  deadline  DateTime? @db.Timestamptz
   budget    Decimal?  @db.Decimal(12, 2)
 
   members   ProjectMember[]
   tasks     Task[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  createdAt DateTime        @default(now()) @db.Timestamptz
+  updatedAt DateTime        @updatedAt @db.Timestamptz
 
   @@index([clientId])
 }
@@ -348,7 +348,7 @@ model Task {
   dependsOn  TaskDependency[] @relation("Dependent")
   dependedBy TaskDependency[] @relation("Prerequisite")
 
-  deadline       DateTime?
+  deadline       DateTime? @db.Timestamptz
   estimatedHours Float?
   actualHours    Float?
   progress       Int       @default(0) // 0-100
@@ -356,15 +356,15 @@ model Task {
   /// When the task was first handed to somebody. Server-set on create (or on
   /// the first assignment if the task was created unassigned) and never
   /// rewritten afterwards — reassignment keeps the original stamp.
-  assignedAt DateTime?
+  assignedAt DateTime? @db.Timestamptz
   /// When work actually began: the first transition into IN_PROGRESS. Write-once;
   /// moving back to TODO/HOLD and forward again does not reset it.
-  startedAt  DateTime?
+  startedAt  DateTime? @db.Timestamptz
 
   approvalStatus ApprovalStatus @default(NOT_REQUIRED)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 
   @@index([status])
   @@index([projectId])
@@ -399,9 +399,9 @@ model WorkerAssignment {
   assignedBy   User   @relation("WorkerAssignmentAssignedBy", fields: [assignedById], references: [id])
   assignedById String
 
-  assignedAt DateTime  @default(now())
+  assignedAt   DateTime  @default(now()) @db.Timestamptz
   /// Set when this worker is replaced or removed; null means currently active.
-  unassignedAt DateTime?
+  unassignedAt DateTime? @db.Timestamptz
 
   @@index([taskId, assignedAt])
   @@index([workerId])
@@ -468,7 +468,7 @@ model Attachment {
   mimeType  String?
   task      Task?    @relation("TaskAttachments", fields: [taskId], references: [id], onDelete: Cascade)
   taskId    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 }
 
 model Comment {
@@ -479,8 +479,8 @@ model Comment {
   task      Task?    @relation("TaskComments", fields: [taskId], references: [id], onDelete: Cascade)
   taskId    String?
   mentions  String[] // userIds mentioned
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 
   @@index([taskId])
 }
@@ -499,7 +499,7 @@ model Activity {
   meta      Json?
   task      Task?    @relation("TaskActivities", fields: [taskId], references: [id], onDelete: Cascade)
   taskId    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 
   @@index([entity, entityId])
 }
@@ -515,7 +515,7 @@ model AuditLog {
   newValue  Json?
   ip        String?
   device    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 
   @@index([entity, entityId])
   @@index([actorId])
@@ -550,8 +550,8 @@ model ApprovalStep {
   approverId String?
   decision   StepDecision @default(PENDING)
   comment    String?
-  decidedAt  DateTime?
-  createdAt  DateTime     @default(now())
+  decidedAt  DateTime?    @db.Timestamptz
+  createdAt  DateTime     @default(now()) @db.Timestamptz
 
   @@index([kind, entityId])
 }
@@ -582,10 +582,10 @@ model LeaveRequest {
   requester       User          @relation("LeaveRequester", fields: [requesterId], references: [id])
   requesterId     String
   type            LeaveType
-  startDate       DateTime
-  endDate         DateTime
+  startDate       DateTime      @db.Timestamptz
+  endDate         DateTime      @db.Timestamptz
   days            Int
-  returnDate      DateTime?
+  returnDate      DateTime?     @db.Timestamptz
   reason          String
   actingUser      User?         @relation("LeaveActing", fields: [actingUserId], references: [id])
   actingUserId    String?
@@ -594,8 +594,8 @@ model LeaveRequest {
   status          RequestStatus @default(PENDING)
   rejectionReason String?
   rejectedById    String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime      @default(now()) @db.Timestamptz
+  updatedAt       DateTime      @updatedAt @db.Timestamptz
 
   @@index([requesterId])
   @@index([status])
@@ -615,14 +615,14 @@ model PermissionRequest {
   requester       User                  @relation(fields: [requesterId], references: [id])
   requesterId     String
   type            PermissionRequestType
-  date            DateTime
+  date            DateTime              @db.Timestamptz
   fromTime        String?
   toTime          String?
   reason          String
   status          RequestStatus         @default(PENDING)
   rejectionReason String?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  createdAt       DateTime              @default(now()) @db.Timestamptz
+  updatedAt       DateTime              @updatedAt @db.Timestamptz
 
   @@index([requesterId])
 }
@@ -638,12 +638,12 @@ model Resignation {
   department     String?
   jobTitle       String?
   reason         String
-  submissionDate DateTime          @default(now())
-  lastWorkingDay DateTime
+  submissionDate DateTime          @default(now()) @db.Timestamptz
+  lastWorkingDay DateTime          @db.Timestamptz
   status         RequestStatus     @default(PENDING)
   checklist      OffboardingItem[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  createdAt      DateTime          @default(now()) @db.Timestamptz
+  updatedAt      DateTime          @updatedAt @db.Timestamptz
 }
 
 model OffboardingItem {
@@ -663,9 +663,9 @@ model Attendance {
   id       String    @id @default(cuid())
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId   String
-  date     DateTime
-  checkIn  DateTime?
-  checkOut DateTime?
+  date     DateTime  @db.Timestamptz
+  checkIn  DateTime? @db.Timestamptz
+  checkOut DateTime? @db.Timestamptz
   late     Boolean   @default(false)
   status   String    @default("present") // present, absent, leave, remote
 
@@ -682,7 +682,7 @@ model PerformanceReview {
   period       String // "2026-07"
   qualityScore Int // 0-100
   notes        String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime @default(now()) @db.Timestamptz
 
   @@index([subjectId])
 }
@@ -701,7 +701,7 @@ model Warning {
   issuedById String
   level      WarningLevel
   reason     String
-  createdAt  DateTime     @default(now())
+  createdAt  DateTime     @default(now()) @db.Timestamptz
 
   @@index([userId])
 }
@@ -714,7 +714,7 @@ model EotmConfig {
   attendanceWeight     Int      @default(10)
   collaborationWeight  Int      @default(10)
   initiativeWeight     Int      @default(10)
-  updatedAt            DateTime @default(now()) @updatedAt
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz
 }
 
 model EotmScore {
@@ -743,7 +743,7 @@ model EotmWinner {
   overridden    Boolean  @default(false)
   justification String?
   reward        String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime @default(now()) @db.Timestamptz
 }
 
 model Achievement {
@@ -752,7 +752,7 @@ model Achievement {
   userId    String
   badge     String // key of badge
   title     String
-  awardedAt DateTime @default(now())
+  awardedAt DateTime @default(now()) @db.Timestamptz
 }
 
 model EmployeeDocument {
@@ -762,7 +762,7 @@ model EmployeeDocument {
   name      String
   url       String
   category  String   @default("general")
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -786,24 +786,24 @@ enum NotificationType {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  type      NotificationType
-  title     String
-  body      String?
-  link      String?
-  read      Boolean          @default(false)
+  id          String           @id @default(cuid())
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  type        NotificationType
+  title       String
+  body        String?
+  link        String?
+  read        Boolean          @default(false)
   /// When the recipient read it. Null while unread; set once and kept for audit
   /// and response-time reporting.
-  readAt    DateTime?
+  readAt      DateTime?        @db.Timestamptz
   /// Soft delete. When set, the notification is hidden from the recipient's
   /// feed and excluded from unread counts, but the row is retained for audit —
   /// consistent with Department.archived, and it makes Undo a single write
   /// back to null rather than re-inserting a row under a new id.
-  dismissedAt DateTime?
-  meta      Json?
-  createdAt DateTime         @default(now())
+  dismissedAt DateTime?        @db.Timestamptz
+  meta        Json?
+  createdAt   DateTime         @default(now()) @db.Timestamptz
 
   @@index([userId, read])
   @@index([userId, createdAt])
@@ -820,8 +820,8 @@ model PushSubscription {
   p256dh     String // client public key
   auth       String // client auth secret
   userAgent  String?
-  createdAt  DateTime @default(now())
-  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now()) @db.Timestamptz
+  lastUsedAt DateTime @default(now()) @db.Timestamptz
 
   @@index([userId])
 }
@@ -840,7 +840,7 @@ model Policy {
   order           Int         @default(0)
   requiresAck     Boolean     @default(false)
   acknowledgments PolicyAck[]
-  updatedAt       DateTime    @default(now()) @updatedAt
+  updatedAt       DateTime    @default(now()) @updatedAt @db.Timestamptz
 }
 
 model PolicyAck {
@@ -849,7 +849,7 @@ model PolicyAck {
   policyId String
   userId   String
   version  Int
-  ackedAt  DateTime @default(now())
+  ackedAt  DateTime @default(now()) @db.Timestamptz
 
   @@unique([policyId, userId, version])
 }
@@ -883,8 +883,8 @@ model JobDescription {
 
   versions JobDescriptionVersion[] @relation("DocumentVersions")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 
   @@index([employeeId])
 }
@@ -918,7 +918,7 @@ model JobDescriptionVersion {
 
   currentFor JobDescription? @relation("CurrentVersion")
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 
   @@unique([documentId, version])
   @@index([documentId])
@@ -944,7 +944,7 @@ model JobDescriptionAck {
 
   ip        String?
   userAgent String?
-  ackedAt   DateTime @default(now())
+  ackedAt   DateTime @default(now()) @db.Timestamptz
 
   /// One acknowledgment per person per version — a new upload creates a new
   /// version, which is what re-arms the requirement.

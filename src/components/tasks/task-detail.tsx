@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge, TimestampValue } from "./task-bits";
+import { StatusBadge, TimestampValue, taskRef, isCodeRef } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
 import { formatExactDateTime, fullName } from "@/lib/utils";
 import { DeadlinePicker, toDeadlineInput } from "@/components/ui/deadline-picker";
@@ -127,7 +127,12 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
             {/* header */}
             <div className="flex items-center justify-between border-b border-border px-6 py-3">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">{task.code}</span>
+                <span
+                  className={`text-xs text-muted-foreground ${isCodeRef(task) ? "font-mono" : "font-medium"}`}
+                  title={task.code}
+                >
+                  {taskRef(task)}
+                </span>
                 <StatusBadge status={task.status} />
               </div>
               <div className="flex items-center gap-1">

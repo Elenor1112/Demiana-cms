@@ -63,6 +63,8 @@ export async function GET() {
       take: 6,
       select: {
         id: true, code: true, title: true, deadline: true, priority: true, status: true,
+        // Rows lead with the client name and fall back to the code (taskRef).
+        client: { select: { company: true } },
         assignees: { include: { user: { select: { firstName: true, lastName: true, avatarUrl: true } } } },
       },
     });

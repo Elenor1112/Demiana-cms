@@ -12,6 +12,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarGroup } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { taskRef } from "@/components/tasks/task-bits";
 import { TrendArea, DeptBar, StatusDonut } from "@/components/charts/charts";
 import { TASK_STATUS_META, PRIORITY_META } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -127,7 +128,7 @@ export function DashboardClient() {
                 <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: PRIORITY_META[t.priority as keyof typeof PRIORITY_META].color }} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{t.title}</div>
-                  <div className="text-xs text-muted-foreground">{t.code} · {formatDateTime(t.deadline)}</div>
+                  <div className="truncate text-xs text-muted-foreground">{taskRef(t)} · {formatDateTime(t.deadline)}</div>
                 </div>
                 <AvatarGroup users={t.assignees.map((a: any) => a.user)} size={22} max={2} />
               </Link>

@@ -1,6 +1,7 @@
 "use client";
 import { TASK_STATUS_META, TASK_STATUS_ORDER } from "@/lib/constants";
-import { StatusDot, PriorityFlag, DeadlinePill, type TaskListItem } from "./task-bits";
+import { StatusDot, PriorityFlag, DeadlinePill, taskRef, isCodeRef, type TaskListItem } from "./task-bits";
+import { cn } from "@/lib/utils";
 import { AvatarGroup } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -26,7 +27,17 @@ export function ListView({ tasks, onOpen }: { tasks: TaskListItem[]; onOpen: (id
                   onClick={() => onOpen(task.id)}
                   className="flex w-full items-center gap-3 border-b border-border px-4 py-2.5 text-left last:border-b-0 hover:bg-accent/40"
                 >
-                  <span className="font-mono text-[11px] text-muted-foreground w-16 shrink-0">{task.code}</span>
+                  {/* Widened from w-16 (sized for "ELN-105") to fit a company
+                      name, and truncating so long ones don't crowd the title. */}
+                  <span
+                    className={cn(
+                      "w-28 shrink-0 truncate text-[11px] text-muted-foreground",
+                      isCodeRef(task) ? "font-mono" : "font-medium"
+                    )}
+                    title={taskRef(task)}
+                  >
+                    {taskRef(task)}
+                  </span>
                   <PriorityFlag priority={task.priority} />
                   <span className="flex-1 truncate text-sm font-medium">{task.title}</span>
                   {task.labels.slice(0, 2).map((l) => (
