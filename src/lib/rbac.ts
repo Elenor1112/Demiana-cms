@@ -22,6 +22,10 @@ export const PERMISSIONS = {
   "Task.Assign": "Assign tasks to others",
   "Task.Approve": "Approve tasks / content / designs",
   "Task.ChangeStatus": "Change task status",
+  // Worker = who executes, as opposed to assignees, who stay accountable.
+  "Task.AssignWorker": "Set the worker executing a task",
+  "Task.ChangeWorker": "Replace or remove a task's worker once one is set",
+  "Task.DelegateOwnTasks": "Delegate execution of tasks you are assigned to your own team",
   // Projects
   "Project.View": "View projects",
   "Project.Create": "Create projects",
@@ -170,6 +174,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Task.ViewAll",
     "Task.Assign",
     "Task.Approve",
+    // Can set and change the worker on any task it can see, for the cases where
+    // Account Management needs to redirect execution itself.
+    "Task.AssignWorker",
+    "Task.ChangeWorker",
     "Project.Create",
     "Project.Edit",
     "Project.Delete",
@@ -213,6 +221,11 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Task.ViewDepartment",
     "Task.Assign",
     "Task.Approve",
+    // The delegation case this whole flow exists for: an Art Director handed a
+    // task picks which designer executes it, while staying the assignee.
+    "Task.AssignWorker",
+    "Task.ChangeWorker",
+    "Task.DelegateOwnTasks",
     // Runs creative work end-to-end, so it can open a project to hang that work
     // off. Editing and deleting projects stay with Account Management.
     "Project.Create",
@@ -229,12 +242,34 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   DEVELOPER: [...baseEmployee],
 };
 
-/** Roles allowed to assign tasks to which roles (workflow constraint). */
+/**
+ * Roles allowed to assign tasks to which roles (workflow constraint).
+ *
+ * Account Management briefs the Design Team directly — an Account Manager can
+ * hand work to the Art Director or straight to a designer, rather than every
+ * design task having to route through the Art Director first.
+ */
 export const ASSIGNMENT_MATRIX: Partial<Record<RoleKey, RoleKey[]>> = {
   CEO: Object.keys(ROLE_META) as RoleKey[],
   OPERATIONS_MANAGER: Object.keys(ROLE_META) as RoleKey[],
-  ACCOUNT_MANAGER: ["ART_DIRECTOR", "CONTENT_CREATOR", "COMMUNICATION_SPECIALIST"],
+  ACCOUNT_MANAGER: ["ART_DIRECTOR", "DESIGNER", "CONTENT_CREATOR", "COMMUNICATION_SPECIALIST"],
   ART_DIRECTOR: ["DESIGNER"],
+};
+
+/**
+ * Departments a role may assign into regardless of the assignee's role.
+ *
+ * The role matrix above cannot express "anyone on the Design Team", which is
+ * what the business actually means — a new role added to that department (a
+ * Motion Designer, say) should be briefable by Account Management on day one,
+ * without a code change here. Matched by department *name*, so it survives the
+ * id differing between environments.
+ *
+ * A user is assignable if they clear EITHER this or the role matrix.
+ */
+export const ASSIGNABLE_DEPARTMENTS: Partial<Record<RoleKey, string[]>> = {
+  ACCOUNT_MANAGER: ["Design Team"],
+  ART_DIRECTOR: ["Design Team"],
 };
 
 // ─── Runtime helpers ─────────────────────────────────────────
@@ -262,10 +297,24 @@ export function canAny(user: Pick<SessionUser, "isSuperAdmin" | "permissions">, 
   return perms.some((p) => user.permissions.includes(p));
 }
 
-export function canAssignTo(actorRole: RoleKey, targetRole: RoleKey) {
-  const allowed = ASSIGNMENT_MATRIX[actorRole];
-  if (!allowed) return false;
-  return allowed.includes(targetRole);
+/**
+ * Whether `actorRole` may assign a task to someone with `targetRole`, optionally
+ * in `targetDepartmentName`.
+ *
+ * Either dimension is sufficient: a role listed in the matrix is assignable
+ * anywhere, and anyone in a listed department is assignable whatever their role.
+ * Super admins bypass this entirely at the call sites.
+ */
+export function canAssignTo(
+  actorRole: RoleKey,
+  targetRole: RoleKey,
+  targetDepartmentName?: string | null
+) {
+  if (ASSIGNMENT_MATRIX[actorRole]?.includes(targetRole)) return true;
+  if (targetDepartmentName && ASSIGNABLE_DEPARTMENTS[actorRole]?.includes(targetDepartmentName)) {
+    return true;
+  }
+  return false;
 }
 
 /**

@@ -77,6 +77,29 @@ export function toDateTimeInputValue(d?: Date | string | null) {
   );
 }
 
+/**
+ * The canonical timestamp format for activity timelines: 7/27/2026, 12:19 PM.
+ *
+ * Used by task activity, comments, audit logs and notification history so those
+ * surfaces never mix relative and absolute time. Unlike formatDateTime, this
+ * always shows the clock — an event at local midnight really did happen at
+ * 12:00 AM, whereas a date-only *deadline* means "end of day" and should stay
+ * date-only.
+ *
+ * Locale and timezone come from the runtime (undefined locale = the user's own),
+ * so this follows the viewer's regional settings.
+ */
+const dtfExact = new Intl.DateTimeFormat(undefined, {
+  year: "numeric", month: "numeric", day: "numeric",
+  hour: "numeric", minute: "2-digit",
+});
+export function formatExactDateTime(d?: Date | string | null) {
+  if (!d) return "—";
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return "—";
+  return dtfExact.format(date);
+}
+
 export function relativeTime(d?: Date | string | null) {
   if (!d) return "";
   const date = new Date(d);

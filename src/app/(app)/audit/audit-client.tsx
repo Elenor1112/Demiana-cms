@@ -5,7 +5,7 @@ import { apiGet } from "@/lib/fetcher";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { relativeTime } from "@/lib/utils";
+import { formatExactDateTime } from "@/lib/utils";
 
 const ACTION_COLOR: Record<string, string> = {
   create: "#22C55E", update: "#0EA5E9", delete: "#EF4444", deactivate: "#EF4444",
@@ -50,7 +50,7 @@ export function AuditClient() {
               </td>
               <td className="px-4 py-2.5"><Badge color={colorFor(log.action)}>{log.action}</Badge></td>
               <td className="px-4 py-2.5 text-muted-foreground">{log.entity}{log.entityId ? ` · ${log.entityId.slice(0, 8)}` : ""}</td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{relativeTime(log.createdAt)}</td>
+              <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{formatExactDateTime(log.createdAt)}</td>
             </tr>
           ))}
         </tbody>

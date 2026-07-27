@@ -130,6 +130,9 @@ model User {
   // Relations
   createdTasks    Task[]              @relation("TaskCreatedBy")
   assignedTasks   TaskAssignee[]
+  workedTasks     Task[]              @relation("TaskWorker")
+  workerAssignments   WorkerAssignment[] @relation("WorkerAssignmentWorker")
+  workerDelegations   WorkerAssignment[] @relation("WorkerAssignmentAssignedBy")
   taskFollows     TaskFollower[]
   comments        Comment[]
   activities      Activity[]
@@ -314,6 +317,21 @@ model Task {
   createdById String
   createdBy   User   @relation("TaskCreatedBy", fields: [createdById], references: [id])
 
+  /// The person actually executing the work, as distinct from `assignees`, who
+  /// stay accountable for it. An Art Director assigned a task delegates the
+  /// execution to a designer by setting this; the Art Director remains an
+  /// assignee. Nullable — most tasks never need the distinction, and every
+  /// pre-existing task keeps working with it unset.
+  ///
+  /// Deliberately a single relation rather than a join table: today the rule is
+  /// one worker per task. `WorkerAssignment` below carries the history, so
+  /// widening this to many workers later means adding a join table without
+  /// having to reconstruct the audit trail.
+  workerId String?
+  worker   User?   @relation("TaskWorker", fields: [workerId], references: [id])
+
+  workerHistory WorkerAssignment[]
+
   // Subtask tree
   parentId String?
   parent   Task?   @relation("Subtasks", fields: [parentId], references: [id])
@@ -357,6 +375,36 @@ model Task {
   // ranges, so they are indexed rather than sequentially scanned.
   @@index([assignedAt])
   @@index([startedAt])
+  // "What is this designer currently executing?" — the workload query.
+  @@index([workerId])
+}
+
+/// Append-only record of who was executing a task and when.
+///
+/// Separate from the `Task.workerId` pointer so delegation history survives
+/// reassignment: the pointer answers "who is on it now", these rows answer
+/// "who worked on it, for how long, and who put them there". Feeds workload
+/// and delegation-chain analytics without duplicating the user relationship.
+model WorkerAssignment {
+  id     String @id @default(cuid())
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId String
+
+  /// Null marks the row where the worker was cleared, so a removal is part of
+  /// the timeline rather than a silent gap.
+  worker   User?   @relation("WorkerAssignmentWorker", fields: [workerId], references: [id])
+  workerId String?
+
+  /// Who delegated. Retained for delegation-chain reporting.
+  assignedBy   User   @relation("WorkerAssignmentAssignedBy", fields: [assignedById], references: [id])
+  assignedById String
+
+  assignedAt DateTime  @default(now())
+  /// Set when this worker is replaced or removed; null means currently active.
+  unassignedAt DateTime?
+
+  @@index([taskId, assignedAt])
+  @@index([workerId])
 }
 
 model TaskAssignee {

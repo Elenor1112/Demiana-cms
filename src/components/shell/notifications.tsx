@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { Bell, Check, BellRing, Trash2 } from "lucide-react";
-import { relativeTime } from "@/lib/utils";
+import { formatExactDateTime } from "@/lib/utils";
 import { usePush } from "@/lib/use-push";
 
 type Notif = {
@@ -316,7 +316,7 @@ export function NotificationBell() {
                           </div>
                         )}
                         <div className="mt-1 text-[11px] text-muted-foreground">
-                          {relativeTime(n.createdAt)}
+                          {formatExactDateTime(n.createdAt)}
                         </div>
                       </div>
                     </div>

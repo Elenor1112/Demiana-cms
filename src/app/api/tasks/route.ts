@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
+import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
+import { can } from "@/lib/rbac";
 import {
   nextTaskCode, logActivity, taskVisibilityFilter, parseDeadline, lifecycleStamps,
+  isAssignableBy, recordWorkerChange,
 } from "@/lib/tasks";
 import { notifyMany } from "@/lib/notify";
 import type { Prisma, TaskStatus } from "@prisma/client";
@@ -29,8 +31,18 @@ export async function GET(req: NextRequest) {
     // Scope to what this user is allowed to see before any other filter.
     const visibility = taskVisibilityFilter(user);
 
+    // `mine` and `q` would both want the top-level OR key and the second would
+    // clobber the first, so scoping predicates go into AND where they compose.
+    const and: Prisma.TaskWhereInput[] = [];
+    if (visibility) and.push(visibility);
+    if (mine) {
+      // "Mine" covers both accountability and execution, so a delegated task
+      // shows up for the designer actually doing it.
+      and.push({ OR: [{ assignees: { some: { userId: user.id } } }, { workerId: user.id }] });
+    }
+
     const where: Prisma.TaskWhereInput = {
-      ...(visibility ? { AND: [visibility] } : {}),
+      ...(and.length ? { AND: and } : {}),
       parentId: sp.get("includeSubtasks") ? undefined : null,
       ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }] } : {}),
       ...(status.length ? { status: { in: status as TaskStatus[] } } : {}),
@@ -42,13 +54,13 @@ export async function GET(req: NextRequest) {
       ...(priority ? { priority: priority as never } : {}),
       ...(createdBy ? { createdById: createdBy } : {}),
       ...(assignedTo ? { assignees: { some: { userId: assignedTo } } } : {}),
-      ...(mine ? { assignees: { some: { userId: user.id } } } : {}),
     };
 
     const tasks = await db.task.findMany({
       where,
       include: {
         assignees: { include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } } },
+        worker: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
         labels: { include: { label: true } },
         project: { select: { id: true, name: true } },
         client: { select: { id: true, company: true } },
@@ -76,6 +88,7 @@ const createSchema = z.object({
   deadline: z.string().optional().nullable(),
   estimatedHours: z.number().optional().nullable(),
   assigneeIds: z.array(z.string()).default([]),
+  workerId: z.string().optional().nullable(),
   labelIds: z.array(z.string()).default([]),
 });
 
@@ -83,6 +96,23 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requirePermission("Task.Create");
     const data = createSchema.parse(await req.json());
+
+    // Enforce the assignment matrix server-side rather than trusting the
+    // filtered dropdown — same rule the meta route builds the dropdown from.
+    for (const uid of data.assigneeIds) {
+      if (!(await isAssignableBy(user, uid))) {
+        throw new ApiError(403, "You cannot assign tasks to one of the selected people.");
+      }
+    }
+    if (data.workerId) {
+      if (!can(user, "Task.AssignWorker")) {
+        throw new ApiError(403, "Missing permission: Task.AssignWorker");
+      }
+      if (!(await isAssignableBy(user, data.workerId))) {
+        throw new ApiError(403, "You cannot assign that person as the worker.");
+      }
+    }
+
     const code = await nextTaskCode();
 
     // Server clock only — the client never supplies these.
@@ -105,6 +135,7 @@ export async function POST(req: NextRequest) {
         clientId: data.clientId || null,
         departmentId: data.departmentId || null,
         parentId: data.parentId || null,
+        workerId: data.workerId || null,
         deadline: data.deadline ? parseDeadline(data.deadline) : null,
         estimatedHours: data.estimatedHours ?? null,
         createdById: user.id,
@@ -131,10 +162,33 @@ export async function POST(req: NextRequest) {
         meta: { startedAt: stamps.startedAt },
       });
     }
+    if (data.workerId) {
+      await recordWorkerChange({ taskId: task.id, workerId: data.workerId, actorId: user.id, at: now });
+      await logActivity({
+        actorId: user.id,
+        taskId: task.id,
+        verb: "assigned worker",
+        meta: { workerId: data.workerId },
+      });
+    }
     await audit({
       actorId: user.id, action: "task.create", entity: "task", entityId: task.id,
-      newValue: { code, title: data.title, assignedAt: stamps.assignedAt ?? null, startedAt: stamps.startedAt ?? null },
+      newValue: {
+        code, title: data.title,
+        assignedAt: stamps.assignedAt ?? null, startedAt: stamps.startedAt ?? null,
+        workerId: data.workerId ?? null,
+      },
     });
+
+    if (data.workerId && data.workerId !== user.id) {
+      await notifyMany([data.workerId], {
+        type: "TASK_ASSIGNED",
+        title: "You've been assigned to execute a task",
+        body: `${user.firstName} ${user.lastName} assigned you as the worker on "${task.title}" (${code}).`,
+        link: `/tasks?task=${task.id}`,
+        meta: { taskId: task.id, assignedBy: `${user.firstName} ${user.lastName}`, role: "worker" },
+      });
+    }
 
     if (data.assigneeIds.length) {
       await notifyMany(data.assigneeIds.filter((id) => id !== user.id), {

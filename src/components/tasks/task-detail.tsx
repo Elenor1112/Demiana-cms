@@ -19,7 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, TimestampValue } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
-import { relativeTime, fullName } from "@/lib/utils";
+import { formatExactDateTime, fullName } from "@/lib/utils";
 import { DeadlinePicker, toDeadlineInput } from "@/components/ui/deadline-picker";
 import { useSession, useCan } from "@/components/session-context";
 import type { TaskStatus } from "@prisma/client";
@@ -62,6 +62,35 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   // rejects them without Task.EditDetails, so render them read-only instead of
   // letting the user click into a guaranteed 403.
   const canEditDetails = can("Task.EditDetails");
+
+  // Worker = who executes, as opposed to assignees, who stay accountable.
+  // Delegation is scoped to your own tasks, so mirror the server's rule here to
+  // avoid offering a control that would 403.
+  const isAssignee = Boolean(task?.assignees?.some((a: any) => a.user.id === me.id));
+  const canSetWorker =
+    can(task?.workerId ? "Task.ChangeWorker" : "Task.AssignWorker") ||
+    (can("Task.DelegateOwnTasks") && isAssignee);
+
+  // Candidate list is server-scoped (own department for delegators), so the
+  // dropdown can never offer someone the API would reject.
+  const { data: meta } = useQuery({
+    queryKey: ["task-meta"],
+    queryFn: () => apiGet<{ workerCandidates: any[] }>("/api/tasks/meta"),
+    enabled: canSetWorker,
+    staleTime: 5 * 60_000,
+  });
+  const workerCandidates = meta?.workerCandidates ?? [];
+
+  // Moving to In Progress without a worker prompts for one, which is the
+  // delegation moment the workflow is built around.
+  const [promptWorker, setPromptWorker] = React.useState(false);
+
+  function changeStatus(status: TaskStatus) {
+    if (status === "IN_PROGRESS" && !task?.workerId && canSetWorker && workerCandidates.length) {
+      setPromptWorker(true);
+    }
+    patch.mutate({ status });
+  }
 
   const [comment, setComment] = React.useState("");
   const addComment = useMutation({
@@ -145,7 +174,7 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                 <MetaRow label="Status">
                   <Select
                     value={task.status}
-                    onChange={(e) => patch.mutate({ status: e.target.value as TaskStatus })}
+                    onChange={(e) => changeStatus(e.target.value as TaskStatus)}
                     className="h-8"
                   >
                     {TASK_STATUS_ORDER.map((s) => (
@@ -166,10 +195,48 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                     </Badge>
                   )}
                 </MetaRow>
+                {/* Assignees own the outcome; Worker does the work. Kept as two
+                    rows so the distinction is visible at a glance. */}
                 <MetaRow label="Assignees">
                   {task.assignees.length ? (
                     <AvatarGroup users={task.assignees.map((a: any) => a.user)} size={26} />
                   ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
+                </MetaRow>
+                <MetaRow label="Worker">
+                  {canSetWorker && workerCandidates.length ? (
+                    <Select
+                      value={task.workerId ?? ""}
+                      onChange={(e) => {
+                        setPromptWorker(false);
+                        patch.mutate({ workerId: e.target.value || null });
+                      }}
+                      className={`h-8 ${promptWorker && !task.workerId ? "ring-1 ring-warning" : ""}`}
+                    >
+                      <option value="">— No worker —</option>
+                      {workerCandidates.map((u: any) => (
+                        <option key={u.id} value={u.id}>
+                          {fullName(u)}{u.jobTitle ? ` · ${u.jobTitle}` : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : task.worker ? (
+                    <span className="flex items-center gap-2 text-sm">
+                      <Avatar
+                        firstName={task.worker.firstName}
+                        lastName={task.worker.lastName}
+                        src={task.worker.avatarUrl}
+                        size={24}
+                      />
+                      {fullName(task.worker)}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Not delegated</span>
+                  )}
+                  {promptWorker && !task.workerId && (
+                    <p className="mt-1 text-[11px] text-warning">
+                      Select who will carry out this work.
+                    </p>
+                  )}
                 </MetaRow>
                 {/* Lifecycle stamps are system-managed and read-only: assigned
                     on creation/first assignment, started on the first move into
@@ -279,7 +346,7 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                       <div className="flex-1">
                         <div className="flex items-baseline gap-2">
                           <span className="text-sm font-medium">{fullName(c.author)}</span>
-                          <span className="text-[11px] text-muted-foreground">{relativeTime(c.createdAt)}</span>
+                          <span className="text-[11px] text-muted-foreground">{formatExactDateTime(c.createdAt)}</span>
                         </div>
                         <p className="text-sm text-foreground/90">{c.body}</p>
                       </div>
@@ -301,13 +368,22 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
               {/* activity */}
               <Section icon={ActivityIcon} title="Activity">
                 <div className="space-y-2">
-                  {task.activities.map((a: any) => (
+                  {/* Oldest first, so the delegation story reads top to bottom.
+                      The API returns newest-first (it takes the latest 30). */}
+                  {[...task.activities]
+                    .sort((x: any, y: any) => +new Date(x.createdAt) - +new Date(y.createdAt))
+                    .map((a: any) => (
                     <div key={a.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Clock className="size-3" />
+                      <Clock className="size-3 shrink-0" />
                       <span className="font-medium text-foreground">{a.actor.firstName}</span>
                       {a.verb}
+                      {/* Worker events carry the name, so the entry reads
+                          "Salma assigned worker Youssef Tarek". */}
+                      {a.meta?.workerName && (
+                        <span className="font-medium text-foreground">{a.meta.workerName}</span>
+                      )}
                       {a.meta?.to && <Badge color={TASK_STATUS_META[a.meta.to as TaskStatus]?.color}>{TASK_STATUS_META[a.meta.to as TaskStatus]?.label ?? a.meta.to}</Badge>}
-                      <span className="ml-auto">{relativeTime(a.createdAt)}</span>
+                      <span className="ml-auto whitespace-nowrap">{formatExactDateTime(a.createdAt)}</span>
                     </div>
                   ))}
                 </div>

@@ -5,6 +5,7 @@ import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from
 import {
   logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask,
   parseDeadline, formatDeadlineText, lifecycleStamps,
+  workerAuthorization, isAssignableBy, recordWorkerChange,
 } from "@/lib/tasks";
 import { can } from "@/lib/rbac";
 import { notifyMany } from "@/lib/notify";
@@ -13,6 +14,15 @@ import type { TaskStatus } from "@prisma/client";
 const taskInclude = {
   assignees: { include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, jobTitle: true } } } },
   followers: { include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } } },
+  worker: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, jobTitle: true } },
+  workerHistory: {
+    include: {
+      worker: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+      assignedBy: { select: { id: true, firstName: true, lastName: true } },
+    },
+    orderBy: { assignedAt: "desc" as const },
+    take: 20,
+  },
   labels: { include: { label: true } },
   project: { select: { id: true, name: true } },
   client: { select: { id: true, company: true } },
@@ -63,6 +73,8 @@ const updateSchema = z.object({
   projectId: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
   assigneeIds: z.array(z.string()).optional(),
+  // null clears the worker; undefined leaves it untouched.
+  workerId: z.string().optional().nullable(),
   labelIds: z.array(z.string()).optional(),
   approvalStatus: z.enum(["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]).optional(),
 });
@@ -97,6 +109,44 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
 
+    // `workerId` is deliberately NOT a privileged field: delegating execution is
+    // exactly what an Art Director without Task.EditDetails must be able to do.
+    // It carries its own permission check instead.
+    const changingWorker = data.workerId !== undefined && data.workerId !== before.workerId;
+    if (changingWorker) {
+      const authz = workerAuthorization(user, before, {
+        settingFirstWorker: before.workerId === null,
+      });
+      if (!authz.allowed) throw new ApiError(403, authz.reason ?? "Not allowed to set the worker");
+
+      if (data.workerId) {
+        // The candidate must be someone this user may put on work at all…
+        if (!(await isAssignableBy(user, data.workerId))) {
+          throw new ApiError(403, "You cannot assign that person as the worker.");
+        }
+        // …and must fall inside the narrower delegation scope when it applies
+        // (an Art Director delegating is limited to their own department).
+        const candidate = await db.user.findFirst({
+          where: { id: data.workerId, ...authz.candidates },
+          select: { id: true },
+        });
+        if (!candidate) {
+          throw new ApiError(403, "You can only assign a worker from your own team.");
+        }
+      }
+    }
+
+    // New assignees are validated against the same rules, so the API enforces
+    // the assignment matrix rather than trusting the filtered UI dropdown.
+    if (data.assigneeIds) {
+      const added = data.assigneeIds.filter((uid) => !before.assignees.some((a) => a.userId === uid));
+      for (const uid of added) {
+        if (!(await isAssignableBy(user, uid))) {
+          throw new ApiError(403, "You cannot assign tasks to one of the selected people.");
+        }
+      }
+    }
+
     // progress auto-set on status change unless explicitly provided
     let progress = data.progress;
     if (data.status && data.status !== before.status && progress === undefined) {
@@ -129,9 +179,47 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         actualHours: data.actualHours,
         projectId: data.projectId === undefined ? undefined : data.projectId || null,
         departmentId: data.departmentId === undefined ? undefined : data.departmentId || null,
+        workerId: data.workerId === undefined ? undefined : data.workerId || null,
         approvalStatus: data.approvalStatus,
       },
     });
+
+    // Worker history, activity and notification. The pointer moved above; this
+    // records who/when for reporting and tells the worker they are on.
+    if (changingWorker) {
+      const nextWorkerId = data.workerId || null;
+      await recordWorkerChange({ taskId: id, workerId: nextWorkerId, actorId: user.id, at: now });
+
+      if (nextWorkerId) {
+        const worker = await db.user.findUnique({
+          where: { id: nextWorkerId },
+          select: { firstName: true, lastName: true },
+        });
+        const workerName = worker ? `${worker.firstName} ${worker.lastName}` : "someone";
+        await logActivity({
+          actorId: user.id,
+          taskId: id,
+          verb: before.workerId ? "changed worker" : "assigned worker",
+          meta: { workerId: nextWorkerId, workerName, previousWorkerId: before.workerId },
+        });
+        if (nextWorkerId !== user.id) {
+          await notifyMany([nextWorkerId], {
+            type: "TASK_ASSIGNED",
+            title: "You've been assigned to execute a task",
+            body: `${user.firstName} ${user.lastName} assigned you as the worker on "${before.title}" (${before.code}).`,
+            link: `/tasks?task=${id}`,
+            meta: { taskId: id, assignedBy: `${user.firstName} ${user.lastName}`, role: "worker" },
+          });
+        }
+      } else {
+        await logActivity({
+          actorId: user.id,
+          taskId: id,
+          verb: "removed worker",
+          meta: { previousWorkerId: before.workerId },
+        });
+      }
+    }
 
     // reconcile assignees
     if (data.assigneeIds) {
@@ -222,12 +310,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     await audit({
       actorId: user.id, action: "task.update", entity: "task", entityId: id,
-      oldValue: { status: before.status, progress: before.progress, assignedAt: before.assignedAt, startedAt: before.startedAt },
+      oldValue: {
+        status: before.status, progress: before.progress,
+        assignedAt: before.assignedAt, startedAt: before.startedAt,
+        workerId: before.workerId,
+      },
       newValue: {
         status: data.status ?? before.status,
         progress: progress ?? before.progress,
         assignedAt: stamps.assignedAt ?? before.assignedAt,
         startedAt: stamps.startedAt ?? before.startedAt,
+        workerId: changingWorker ? (data.workerId || null) : before.workerId,
       },
     });
 

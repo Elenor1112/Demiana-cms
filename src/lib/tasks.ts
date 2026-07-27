@@ -1,6 +1,8 @@
 import "server-only";
 import { db } from "./db";
-import { can, type SessionUser } from "./rbac";
+import {
+  can, canAssignTo, ASSIGNMENT_MATRIX, ASSIGNABLE_DEPARTMENTS, type SessionUser,
+} from "./rbac";
 import type { Prisma, TaskStatus } from "@prisma/client";
 
 /**
@@ -20,6 +22,9 @@ export function taskVisibilityFilter(user: SessionUser): Prisma.TaskWhereInput |
     { assignees: { some: { userId: user.id } } },
     { followers: { some: { userId: user.id } } },
     { createdById: user.id },
+    // The delegated executor sees the task even though they are not an assignee
+    // — this is what puts it on their dashboard and in "my tasks".
+    { workerId: user.id },
     // Keep a parent visible when the user only owns one of its subtasks.
     { subtasks: { some: { assignees: { some: { userId: user.id } } } } },
   ];
@@ -162,6 +167,114 @@ export function lifecycleStamps(
   if (!current.startedAt && enteringWork) stamps.startedAt = now;
 
   return stamps;
+}
+
+/**
+ * Who this user may pick as the worker on this task, and whether they may set
+ * one at all.
+ *
+ * Three ways to qualify, checked in order:
+ *  - `Task.AssignWorker` / `Task.ChangeWorker` — the general grant. Super admins
+ *    and Account Management hold it and may pick anyone their role matrix allows.
+ *  - `Task.DelegateOwnTasks` — the Art Director case. Only on tasks they are
+ *    themselves assigned to, and only over people in their own department.
+ *  - otherwise, no.
+ *
+ * `settingFirstWorker` distinguishes AssignWorker from ChangeWorker so the two
+ * can be granted independently.
+ */
+export function workerAuthorization(
+  user: SessionUser,
+  task: { workerId: string | null; assignees: { userId: string }[] },
+  opts: { settingFirstWorker: boolean }
+): { allowed: boolean; reason?: string; candidates: Prisma.UserWhereInput } {
+  const permission = opts.settingFirstWorker ? "Task.AssignWorker" : "Task.ChangeWorker";
+  const hasGeneralGrant = can(user, permission);
+  const isAssignee = task.assignees.some((a) => a.userId === user.id);
+  const canDelegateOwn = can(user, "Task.DelegateOwnTasks") && isAssignee;
+
+  if (!hasGeneralGrant && !canDelegateOwn) {
+    return {
+      allowed: false,
+      reason: can(user, "Task.DelegateOwnTasks")
+        ? "You can only delegate tasks you are assigned to."
+        : `Missing permission: ${permission}`,
+      candidates: {},
+    };
+  }
+
+  // Super admins pick from anyone active.
+  if (user.isSuperAdmin) return { allowed: true, candidates: { status: "ACTIVE" } };
+
+  // Who this role may put on work at all — the same matrix + department rule
+  // used for assignees, so there is one definition rather than two.
+  const roles = ASSIGNMENT_MATRIX[user.roleKey] ?? [];
+  const departments = ASSIGNABLE_DEPARTMENTS[user.roleKey] ?? [];
+  const generalScope: Prisma.UserWhereInput = {
+    status: "ACTIVE",
+    OR: [
+      { role: { key: { in: roles } } },
+      ...(departments.length ? [{ department: { name: { in: departments } } }] : []),
+    ],
+  };
+
+  // Delegating a task you are assigned to is additionally capped at your own
+  // team — the "only members of the Art Director's team appear" requirement.
+  // Applied whenever the user is delegating their own task, even if they also
+  // hold the general grant, so the narrower rule is never silently bypassed.
+  if (canDelegateOwn) {
+    if (!user.departmentId) {
+      return { allowed: false, reason: "You are not assigned to a department.", candidates: {} };
+    }
+    return {
+      allowed: true,
+      candidates: { status: "ACTIVE", departmentId: user.departmentId },
+    };
+  }
+
+  return { allowed: true, candidates: generalScope };
+}
+
+/**
+ * Whether `user` may put `candidate` on a task, honouring both the role matrix
+ * and the department carve-out. Shared by assignee and worker validation.
+ */
+export async function isAssignableBy(user: SessionUser, candidateId: string) {
+  if (user.isSuperAdmin) return true;
+  const candidate = await db.user.findUnique({
+    where: { id: candidateId },
+    select: { status: true, role: { select: { key: true } }, department: { select: { name: true } } },
+  });
+  if (!candidate || candidate.status !== "ACTIVE") return false;
+  return canAssignTo(user.roleKey, candidate.role.key, candidate.department?.name ?? null);
+}
+
+/**
+ * Record a worker change in the append-only history and move the pointer.
+ *
+ * Closes the currently-open history row before opening the new one, so the
+ * timeline never has two active workers and "how long did this person hold it"
+ * is answerable directly.
+ */
+export async function recordWorkerChange(opts: {
+  taskId: string;
+  workerId: string | null;
+  actorId: string;
+  at?: Date;
+}) {
+  const at = opts.at ?? new Date();
+  await db.workerAssignment.updateMany({
+    where: { taskId: opts.taskId, unassignedAt: null },
+    data: { unassignedAt: at },
+  });
+  await db.workerAssignment.create({
+    data: {
+      taskId: opts.taskId,
+      workerId: opts.workerId,
+      assignedById: opts.actorId,
+      assignedAt: at,
+    },
+  });
 }
 
 /** Log an activity entry against a task. */
