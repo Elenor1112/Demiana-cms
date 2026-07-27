@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Check, BellRing } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
@@ -14,8 +14,13 @@ type Notif = {
   body?: string;
   link?: string;
   read: boolean;
+  readAt?: string | null;
   createdAt: string;
 };
+
+type NotifFeed = { notifications: Notif[]; unread: number };
+
+const FEED_KEY = ["notifications"] as const;
 
 export function NotificationBell() {
   const [open, setOpen] = React.useState(false);
@@ -24,14 +29,78 @@ export function NotificationBell() {
   const push = usePush();
 
   const { data } = useQuery({
-    queryKey: ["notifications"],
+    queryKey: FEED_KEY,
     queryFn: async () => {
       const res = await fetch("/api/notifications");
       if (!res.ok) return { notifications: [], unread: 0 };
-      return res.json() as Promise<{ notifications: Notif[]; unread: number }>;
+      return res.json() as Promise<NotifFeed>;
     },
     refetchInterval: 20_000,
+    // Reading a notification in another tab should clear this tab's badge as
+    // soon as it is looked at, rather than up to 20s later. Needs staleTime 0 to
+    // beat the 30s global default, which would otherwise swallow the refetch.
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
+
+  /**
+   * Mark one notification read.
+   *
+   * The cache is patched optimistically so the dot and the badge clear on the
+   * same frame as the click — navigation happens immediately after, and waiting
+   * for the round trip would leave a stale badge on the destination page. On
+   * failure the previous cache is restored and a refetch reconciles with the
+   * server; other open tabs pick the change up on their next poll.
+   */
+  const markRead = useMutation({
+    mutationFn: (id: string) =>
+      fetch(`/api/notifications/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ read: true }),
+      }).then((res) => {
+        if (!res.ok) throw new Error("Failed to mark notification read");
+        return res.json();
+      }),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: FEED_KEY });
+      const previous = qc.getQueryData<NotifFeed>(FEED_KEY);
+      qc.setQueryData<NotifFeed>(FEED_KEY, (old) => {
+        if (!old) return old;
+        const target = old.notifications.find((n) => n.id === id);
+        if (!target || target.read) return old; // already read — nothing to change
+        return {
+          notifications: old.notifications.map((n) =>
+            n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n
+          ),
+          unread: Math.max(0, old.unread - 1),
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) qc.setQueryData(FEED_KEY, ctx.previous);
+      qc.invalidateQueries({ queryKey: FEED_KEY });
+    },
+    // No invalidate on success: the optimistic patch already matches the server,
+    // and the 20s poll reconciles anything else.
+  });
+
+  /**
+   * Click handler shared by linked and unlinked rows.
+   *
+   * `n.read` alone would not stop a double click — React can hand both events
+   * the same pre-optimistic props — so ids already in flight are tracked
+   * separately in a ref.
+   */
+  const inFlight = React.useRef(new Set<string>());
+  function openNotification(n: Notif) {
+    if (n.read || inFlight.current.has(n.id)) return;
+    inFlight.current.add(n.id);
+    markRead.mutate(n.id, {
+      onSettled: () => inFlight.current.delete(n.id),
+    });
+  }
 
   React.useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -46,7 +115,7 @@ export function NotificationBell() {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === "NOTIFICATION_RECEIVED") {
-        qc.invalidateQueries({ queryKey: ["notifications"] });
+        qc.invalidateQueries({ queryKey: FEED_KEY });
       }
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
@@ -54,8 +123,21 @@ export function NotificationBell() {
   }, [qc]);
 
   async function markAll() {
-    await fetch("/api/notifications/read-all", { method: "POST" });
-    qc.invalidateQueries({ queryKey: ["notifications"] });
+    const previous = qc.getQueryData<NotifFeed>(FEED_KEY);
+    const readAt = new Date().toISOString();
+    qc.setQueryData<NotifFeed>(FEED_KEY, (old) =>
+      old
+        ? {
+            notifications: old.notifications.map((n) =>
+              n.read ? n : { ...n, read: true, readAt }
+            ),
+            unread: 0,
+          }
+        : old
+    );
+    const res = await fetch("/api/notifications/read-all", { method: "POST" }).catch(() => null);
+    if (!res?.ok && previous) qc.setQueryData(FEED_KEY, previous);
+    qc.invalidateQueries({ queryKey: FEED_KEY });
   }
 
   const unread = data?.unread ?? 0;
@@ -136,12 +218,30 @@ export function NotificationBell() {
                       </div>
                     </div>
                   );
+                  // A link is followed regardless of whether the target still
+                  // exists — the destination page renders its own not-found
+                  // state, and the notification stays read either way, matching
+                  // how Slack and Linear behave.
                   return n.link ? (
-                    <Link key={n.id} href={n.link} onClick={() => setOpen(false)}>
+                    <Link
+                      key={n.id}
+                      href={n.link}
+                      onClick={() => {
+                        openNotification(n);
+                        setOpen(false);
+                      }}
+                    >
                       {body}
                     </Link>
                   ) : (
-                    <div key={n.id}>{body}</div>
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => openNotification(n)}
+                      className="block w-full text-left"
+                    >
+                      {body}
+                    </button>
                   );
                 })
               )}

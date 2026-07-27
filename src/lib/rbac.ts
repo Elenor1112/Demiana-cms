@@ -213,6 +213,9 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Task.ViewDepartment",
     "Task.Assign",
     "Task.Approve",
+    // Runs creative work end-to-end, so it can open a project to hang that work
+    // off. Editing and deleting projects stay with Account Management.
+    "Project.Create",
     "Leave.Approve",
     "Permission.Approve",
     // Sees acknowledgment state for the people who report to them (scoped by

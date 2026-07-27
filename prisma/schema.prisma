@@ -335,6 +335,14 @@ model Task {
   actualHours    Float?
   progress       Int       @default(0) // 0-100
 
+  /// When the task was first handed to somebody. Server-set on create (or on
+  /// the first assignment if the task was created unassigned) and never
+  /// rewritten afterwards — reassignment keeps the original stamp.
+  assignedAt DateTime?
+  /// When work actually began: the first transition into IN_PROGRESS. Write-once;
+  /// moving back to TODO/HOLD and forward again does not reset it.
+  startedAt  DateTime?
+
   approvalStatus ApprovalStatus @default(NOT_REQUIRED)
 
   createdAt DateTime @default(now())
@@ -345,6 +353,10 @@ model Task {
   @@index([clientId])
   @@index([departmentId])
   @@index([createdById])
+  // Reporting: pickup time (assignedAt → startedAt) and SLA rollups scan these
+  // ranges, so they are indexed rather than sequentially scanned.
+  @@index([assignedAt])
+  @@index([startedAt])
 }
 
 model TaskAssignee {
@@ -734,6 +746,9 @@ model Notification {
   body      String?
   link      String?
   read      Boolean          @default(false)
+  /// When the recipient read it. Null while unread; set once and kept for audit
+  /// and response-time reporting.
+  readAt    DateTime?
   meta      Json?
   createdAt DateTime         @default(now())
 

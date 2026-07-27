@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
-import { nextTaskCode, logActivity, taskVisibilityFilter, parseDeadline } from "@/lib/tasks";
+import {
+  nextTaskCode, logActivity, taskVisibilityFilter, parseDeadline, lifecycleStamps,
+} from "@/lib/tasks";
 import { notifyMany } from "@/lib/notify";
 import type { Prisma, TaskStatus } from "@prisma/client";
 
@@ -83,9 +85,18 @@ export async function POST(req: NextRequest) {
     const data = createSchema.parse(await req.json());
     const code = await nextTaskCode();
 
+    // Server clock only — the client never supplies these.
+    const now = new Date();
+    const stamps = lifecycleStamps(
+      { assignedAt: null, startedAt: null, status: "TODO" },
+      { status: data.status, hasAssignees: data.assigneeIds.length > 0 },
+      now
+    );
+
     const task = await db.task.create({
       data: {
         code,
+        ...stamps,
         title: data.title,
         description: data.description,
         priority: data.priority,
@@ -104,7 +115,26 @@ export async function POST(req: NextRequest) {
     });
 
     await logActivity({ actorId: user.id, taskId: task.id, verb: "created" });
-    await audit({ actorId: user.id, action: "task.create", entity: "task", entityId: task.id, newValue: { code, title: data.title } });
+    if (stamps.assignedAt) {
+      await logActivity({
+        actorId: user.id,
+        taskId: task.id,
+        verb: "assigned",
+        meta: { assignedAt: stamps.assignedAt, assigneeIds: data.assigneeIds },
+      });
+    }
+    if (stamps.startedAt) {
+      await logActivity({
+        actorId: user.id,
+        taskId: task.id,
+        verb: "started work",
+        meta: { startedAt: stamps.startedAt },
+      });
+    }
+    await audit({
+      actorId: user.id, action: "task.create", entity: "task", entityId: task.id,
+      newValue: { code, title: data.title, assignedAt: stamps.assignedAt ?? null, startedAt: stamps.startedAt ?? null },
+    });
 
     if (data.assigneeIds.length) {
       await notifyMany(data.assigneeIds.filter((id) => id !== user.id), {

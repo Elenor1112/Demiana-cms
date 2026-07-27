@@ -5,11 +5,12 @@ import { requireUser, toErrorResponse } from "@/lib/api";
 export async function POST() {
   try {
     const user = await requireUser();
-    await db.notification.updateMany({
+    // Scoped to unread so already-read rows keep their original readAt.
+    const { count } = await db.notification.updateMany({
       where: { userId: user.id, read: false },
-      data: { read: true },
+      data: { read: true, readAt: new Date() },
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, count });
   } catch (e) {
     return toErrorResponse(e);
   }

@@ -1,10 +1,10 @@
 "use client";
-import { Flag, MessageSquare, GitBranch, Paperclip, CalendarClock } from "lucide-react";
+import { Flag, MessageSquare, GitBranch, Paperclip, CalendarClock, Calendar, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { AvatarGroup } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { TASK_STATUS_META, PRIORITY_META } from "@/lib/constants";
-import { formatDateTime, cn } from "@/lib/utils";
+import { formatDate, formatDateTime, formatTimeOnly, cn } from "@/lib/utils";
 import type { TaskStatus, TaskPriority } from "@prisma/client";
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
@@ -47,6 +47,44 @@ export function DeadlinePill({ deadline, status }: { deadline?: string | Date | 
     >
       <CalendarClock className="size-3" />
       {formatDateTime(date)}
+    </span>
+  );
+}
+
+/**
+ * A read-only lifecycle timestamp: 📅 Jul 27, 2026  🕒 10:42 AM.
+ *
+ * The clock half is dropped when the value carries no time of day (local
+ * midnight), matching how deadlines render elsewhere — see formatDateTime.
+ * Wraps to two lines on narrow panels rather than overflowing.
+ */
+export function TimestampValue({
+  value,
+  placeholder = "—",
+}: {
+  value?: string | Date | null;
+  placeholder?: string;
+}) {
+  if (!value) {
+    return <span className="text-sm text-muted-foreground">{placeholder}</span>;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return <span className="text-sm text-muted-foreground">{placeholder}</span>;
+  }
+  const time = formatTimeOnly(date);
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
+      <span className="inline-flex items-center gap-1.5">
+        <Calendar className="size-3.5 shrink-0 text-muted-foreground" />
+        {formatDate(date)}
+      </span>
+      {time && (
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <Clock className="size-3.5 shrink-0" />
+          {time}
+        </span>
+      )}
     </span>
   );
 }

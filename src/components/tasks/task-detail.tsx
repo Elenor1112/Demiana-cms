@@ -17,9 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "./task-bits";
+import { StatusBadge, TimestampValue } from "./task-bits";
 import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/constants";
-import { formatDateTime, relativeTime, fullName } from "@/lib/utils";
+import { relativeTime, fullName } from "@/lib/utils";
 import { DeadlinePicker, toDeadlineInput } from "@/components/ui/deadline-picker";
 import { useSession, useCan } from "@/components/session-context";
 import type { TaskStatus } from "@prisma/client";
@@ -140,7 +140,8 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
               )}
 
               {/* meta grid */}
-              <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-border bg-background p-4">
+              {/* Single column on phones — the timestamp rows need the width. */}
+              <div className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-border bg-background p-4 sm:grid-cols-2">
                 <MetaRow label="Status">
                   <Select
                     value={task.status}
@@ -170,6 +171,15 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                     <AvatarGroup users={task.assignees.map((a: any) => a.user)} size={26} />
                   ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
                 </MetaRow>
+                {/* Lifecycle stamps are system-managed and read-only: assigned
+                    on creation/first assignment, started on the first move into
+                    In Progress. Neither is editable from here or via the API. */}
+                <MetaRow label="Assigned Date">
+                  <TimestampValue value={task.assignedAt} placeholder="Not assigned yet" />
+                </MetaRow>
+                <MetaRow label="Start Date">
+                  <TimestampValue value={task.startedAt} placeholder="Not started yet" />
+                </MetaRow>
                 <MetaRow label="Deadline" wide={canEditDetails}>
                   {canEditDetails ? (
                     <DeadlinePicker
@@ -177,7 +187,7 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                       onChange={(next) => patch.mutate({ deadline: next || null })}
                     />
                   ) : (
-                    <span className="text-sm">{formatDateTime(task.deadline)}</span>
+                    <TimestampValue value={task.deadline} placeholder="No deadline" />
                   )}
                 </MetaRow>
                 <MetaRow label="Project">
@@ -312,7 +322,7 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
 
 function MetaRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className={wide ? "col-span-2" : undefined}>
+    <div className={wide ? "sm:col-span-2" : undefined}>
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       {children}
     </div>

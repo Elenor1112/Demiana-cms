@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask, parseDeadline, formatDeadlineText } from "@/lib/tasks";
+import {
+  logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask,
+  parseDeadline, formatDeadlineText, lifecycleStamps,
+} from "@/lib/tasks";
 import { can } from "@/lib/rbac";
 import { notifyMany } from "@/lib/notify";
 import type { TaskStatus } from "@prisma/client";
@@ -100,9 +103,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       progress = statusDefaultProgress(data.status, before.progress);
     }
 
+    // Lifecycle stamps — server clock, write-once, never accepted from the client.
+    // Computed before the write so the assignee reconcile below can't race it.
+    const now = new Date();
+    const willHaveAssignees = data.assigneeIds
+      ? data.assigneeIds.length > 0
+      : before.assignees.length > 0;
+    const stamps = lifecycleStamps(
+      { assignedAt: before.assignedAt, startedAt: before.startedAt, status: before.status },
+      { status: data.status, hasAssignees: willHaveAssignees },
+      now
+    );
+
     await db.task.update({
       where: { id },
       data: {
+        ...stamps,
         title: data.title,
         description: data.description,
         status: data.status,
@@ -122,6 +138,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.taskAssignee.deleteMany({ where: { taskId: id } });
       await db.taskAssignee.createMany({ data: data.assigneeIds.map((userId) => ({ taskId: id, userId })) });
       const added = data.assigneeIds.filter((uid) => !before.assignees.some((a) => a.userId === uid));
+      if (stamps.assignedAt) {
+        // First time this task has had anyone on it.
+        await logActivity({
+          actorId: user.id,
+          taskId: id,
+          verb: "assigned",
+          meta: { assignedAt: stamps.assignedAt, assigneeIds: data.assigneeIds },
+        });
+      } else if (added.length) {
+        await logActivity({
+          actorId: user.id,
+          taskId: id,
+          verb: "reassigned",
+          meta: { assigneeIds: data.assigneeIds },
+        });
+      }
       if (added.length) {
         await notifyMany(added.filter((uid) => uid !== user.id), {
           type: "TASK_ASSIGNED",
@@ -164,6 +196,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // activity log for status/progress
     if (data.status && data.status !== before.status) {
       await logActivity({ actorId: user.id, taskId: id, verb: "changed status", meta: { from: before.status, to: data.status } });
+      if (stamps.startedAt) {
+        await logActivity({
+          actorId: user.id,
+          taskId: id,
+          verb: "started work",
+          meta: { startedAt: stamps.startedAt },
+        });
+      }
       // notify followers/creator when a task enters approval or is done
       if (data.status === "WAITING_APPROVAL") {
         await notifyMany([before.createdById], {
@@ -182,8 +222,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     await audit({
       actorId: user.id, action: "task.update", entity: "task", entityId: id,
-      oldValue: { status: before.status, progress: before.progress },
-      newValue: { status: data.status ?? before.status, progress: progress ?? before.progress },
+      oldValue: { status: before.status, progress: before.progress, assignedAt: before.assignedAt, startedAt: before.startedAt },
+      newValue: {
+        status: data.status ?? before.status,
+        progress: progress ?? before.progress,
+        assignedAt: stamps.assignedAt ?? before.assignedAt,
+        startedAt: stamps.startedAt ?? before.startedAt,
+      },
     });
 
     const fresh = await db.task.findUnique({ where: { id }, include: taskInclude });

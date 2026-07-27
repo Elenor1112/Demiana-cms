@@ -126,6 +126,44 @@ export async function rollupSubtaskProgress(taskId: string) {
   });
 }
 
+/**
+ * The status that means "work has actually begun".
+ *
+ * Single place to change if the workflow ever gains a different active state —
+ * every lifecycle stamp derives from this rather than hard-coding IN_PROGRESS.
+ */
+export const WORK_STARTED_STATUS: TaskStatus = "IN_PROGRESS";
+
+/**
+ * Lifecycle timestamps to apply on a task update, given what the task looks like
+ * now and what is changing.
+ *
+ * Both fields are write-once by design:
+ *  - `assignedAt` is stamped the first time the task has at least one assignee,
+ *    so a task created unassigned gets its stamp when it is first handed out.
+ *    Reassignment later leaves the original in place.
+ *  - `startedAt` is stamped on the first transition into IN_PROGRESS and is
+ *    never cleared — bouncing back to TODO/HOLD keeps the original.
+ *
+ * Returns a partial `data` object (empty when nothing should change), so callers
+ * can spread it into a single `task.update` rather than issuing extra writes.
+ * `now` is passed in so one request stamps a consistent instant across fields.
+ */
+export function lifecycleStamps(
+  current: { assignedAt: Date | null; startedAt: Date | null; status: TaskStatus },
+  next: { status?: TaskStatus; hasAssignees?: boolean },
+  now: Date = new Date()
+): { assignedAt?: Date; startedAt?: Date } {
+  const stamps: { assignedAt?: Date; startedAt?: Date } = {};
+
+  if (!current.assignedAt && next.hasAssignees) stamps.assignedAt = now;
+
+  const enteringWork = next.status === WORK_STARTED_STATUS && current.status !== WORK_STARTED_STATUS;
+  if (!current.startedAt && enteringWork) stamps.startedAt = now;
+
+  return stamps;
+}
+
 /** Log an activity entry against a task. */
 export async function logActivity(opts: {
   actorId: string;
