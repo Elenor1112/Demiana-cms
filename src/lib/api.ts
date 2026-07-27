@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getSessionUser } from "./auth";
 import { can, type PermissionKey, type SessionUser } from "./rbac";
+import { InvalidDateError } from "./timezone";
 import { db } from "./db";
 
 export class ApiError extends Error {
@@ -51,6 +52,10 @@ export function toErrorResponse(err: unknown) {
       { error: path ? `${path}: ${issue.message}` : (issue?.message ?? "Invalid input") },
       { status: 400 }
     );
+  }
+  // A malformed date is bad input, not a server fault.
+  if (err instanceof InvalidDateError) {
+    return NextResponse.json({ error: err.message }, { status: 400 });
   }
   console.error(err);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
+import { parseUserDateTime } from "@/lib/timezone";
 import type { RoleKey } from "@prisma/client";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -76,8 +77,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: data.status as never,
         annualLeaveBalance: data.annualLeaveBalance,
         sickLeaveBalance: data.sickLeaveBalance,
-        birthDate: data.birthDate ? new Date(data.birthDate) : data.birthDate === null ? null : undefined,
-        hireDate: data.hireDate ? new Date(data.hireDate) : data.hireDate === null ? null : undefined,
+        birthDate: data.birthDate ? parseUserDateTime(data.birthDate) : data.birthDate === null ? null : undefined,
+        hireDate: data.hireDate ? parseUserDateTime(data.hireDate) : data.hireDate === null ? null : undefined,
       },
       include: { role: true, department: true },
     });

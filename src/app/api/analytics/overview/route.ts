@@ -1,14 +1,24 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, toErrorResponse } from "@/lib/api";
+import { zonedParts, requireUserDateTime, APP_TIMEZONE } from "@/lib/timezone";
 import type { TaskStatus } from "@prisma/client";
 
 export async function GET() {
   try {
     const user = await requireUser();
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Month/day boundaries in the COMPANY zone. Built from server-local parts
+    // these landed on the wrong instant on a UTC host, so "done this month" and
+    // "overdue" were counted against a boundary up to 3h off the office day.
+    const today = zonedParts(now);
+    const monthStart = requireUserDateTime(
+      `${today.year}-${String(today.month).padStart(2, "0")}-01`, "monthStart"
+    );
+    const todayStart = requireUserDateTime(
+      `${today.year}-${String(today.month).padStart(2, "0")}-${String(today.day).padStart(2, "0")}`,
+      "todayStart"
+    );
 
     const [
       totalTasks, openTasks, doneThisMonth, overdue,
@@ -46,14 +56,24 @@ export async function GET() {
 
     // 6-month completion trend
     const trend: { month: string; done: number; created: number }[] = [];
+    // Month boundaries anchored in the company zone, like todayStart above.
+    const monthKey = (offset: number) => {
+      const m0 = today.month - 1 + offset;             // 0-based, may go negative
+      const y = today.year + Math.floor(m0 / 12);
+      const m = ((m0 % 12) + 12) % 12 + 1;             // wrap into 1..12
+      return `${y}-${String(m).padStart(2, "0")}-01`;
+    };
     for (let i = 5; i >= 0; i--) {
-      const s = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const e = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const s = requireUserDateTime(monthKey(-i), "trendStart");
+      const e = requireUserDateTime(monthKey(-i + 1), "trendEnd");
       const [done, created] = await Promise.all([
         db.task.count({ where: { status: "DONE", updatedAt: { gte: s, lt: e } } }),
         db.task.count({ where: { createdAt: { gte: s, lt: e } } }),
       ]);
-      trend.push({ month: s.toLocaleString("en-US", { month: "short" }), done, created });
+      trend.push({
+        month: new Intl.DateTimeFormat("en-US", { timeZone: APP_TIMEZONE, month: "short" }).format(s),
+        done, created,
+      });
     }
 
     // upcoming deadlines
@@ -74,7 +94,12 @@ export async function GET() {
       where: { status: "ACTIVE", birthDate: { not: null } },
       select: { id: true, firstName: true, lastName: true, avatarUrl: true, birthDate: true },
     });
-    const thisMonthBirthdays = birthdays.filter((u) => u.birthDate && u.birthDate.getMonth() === now.getMonth());
+    // Compared in the company zone: a birthday stored at midnight Cairo reads
+    // as the previous day on a UTC host, which dropped people from the list at
+    // month boundaries.
+    const thisMonthBirthdays = birthdays.filter(
+      (u) => u.birthDate && zonedParts(u.birthDate).month === today.month
+    );
 
     return NextResponse.json({
       kpis: { totalTasks, openTasks, doneThisMonth, overdue, totalEmployees, activeProjects, totalClients, pendingLeave },

@@ -5,6 +5,7 @@ import { AvatarGroup } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { TASK_STATUS_META, PRIORITY_META } from "@/lib/constants";
 import { formatDate, formatDateTime, formatTimeOnly, cn } from "@/lib/utils";
+import { isDateOnly } from "@/lib/timezone";
 import type { TaskStatus, TaskPriority } from "@prisma/client";
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
@@ -30,12 +31,12 @@ export function PriorityFlag({ priority, withLabel }: { priority: TaskPriority; 
 export function DeadlinePill({ deadline, status }: { deadline?: string | Date | null; status: TaskStatus }) {
   if (!deadline) return null;
   const date = new Date(deadline);
-  // A date-only deadline (local midnight) means end of that day, so it should
-  // not read as overdue from 00:01 onwards.
-  const dueBy =
-    date.getHours() === 0 && date.getMinutes() === 0
-      ? new Date(new Date(date).setHours(23, 59, 59, 999))
-      : date;
+  // A date-only deadline (midnight in the company zone) means end of that day,
+  // so it should not read as overdue from 00:01 onwards. Zone-aware: getHours()
+  // asks the viewer's device, which misjudged this for anyone outside Cairo.
+  const dueBy = isDateOnly(date)
+    ? new Date(date.getTime() + 24 * 60 * 60 * 1000 - 1)
+    : date;
   const overdue = dueBy < new Date() && status !== "DONE" && status !== "CANCELLED";
   const soon = !overdue && dueBy.getTime() - Date.now() < 2 * 864e5 && status !== "DONE";
   return (

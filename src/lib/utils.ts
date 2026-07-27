@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { APP_TIMEZONE, zonedParts, toZonedInputValue } from "./timezone";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -13,7 +14,17 @@ export function fullName(u: { firstName?: string | null; lastName?: string | nul
   return [u.firstName, u.lastName].filter(Boolean).join(" ") || "Unknown";
 }
 
-const dtf = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+/**
+ * All display formatting is pinned to the company timezone.
+ *
+ * Without an explicit timeZone, Intl uses the viewer's device zone, so the same
+ * deadline read "1:30 PM" in Cairo and "12:30 PM" for anyone travelling — and
+ * server-rendered output disagreed with client-rendered output. Pinning it
+ * means a deadline is one agreed wall-clock time for the whole company.
+ */
+const TZ = APP_TIMEZONE;
+
+const dtf = new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "short", day: "numeric", year: "numeric" });
 export function formatDate(d?: Date | string | null) {
   if (!d) return "—";
   return dtf.format(new Date(d));
@@ -28,15 +39,17 @@ export function toDateInputValue(d?: Date | string | null) {
   if (!d) return "";
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  // Company-zone date parts, so an evening deadline never renders as the next
+  // day for a viewer whose device sits in a zone ahead of the office.
+  return toZonedInputValue(date, TZ, { includeTime: false });
 }
 
 const dtfTime = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ,
   month: "short", day: "numeric", year: "numeric",
   hour: "numeric", minute: "2-digit",
 });
-const dtfTimeOnly = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+const dtfTimeOnly = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
 
 /**
  * Format a date, including the time when one was actually set.
@@ -49,7 +62,10 @@ export function formatDateTime(d?: Date | string | null) {
   if (!d) return "—";
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return "—";
-  const midnight = date.getHours() === 0 && date.getMinutes() === 0;
+  // Midnight in the company zone — getHours() would answer for the viewer's
+  // device instead, so a date-only deadline showed a spurious time abroad.
+  const p = zonedParts(date, TZ);
+  const midnight = p.hour === 0 && p.minute === 0;
   return midnight ? dtf.format(date) : dtfTime.format(date);
 }
 
@@ -58,7 +74,8 @@ export function formatTimeOnly(d?: Date | string | null) {
   if (!d) return "";
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return "";
-  if (date.getHours() === 0 && date.getMinutes() === 0) return "";
+  const p = zonedParts(date, TZ);
+  if (p.hour === 0 && p.minute === 0) return "";
   return dtfTimeOnly.format(date);
 }
 
@@ -70,11 +87,10 @@ export function toDateTimeInputValue(d?: Date | string | null) {
   if (!d) return "";
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  );
+  // Company-zone wall clock. This is the exact inverse of parseUserDateTime(),
+  // so what the picker shows is what a save writes back — the property that
+  // makes editing a task preserve its time.
+  return toZonedInputValue(date, TZ, { includeTime: true });
 }
 
 /**
@@ -86,10 +102,11 @@ export function toDateTimeInputValue(d?: Date | string | null) {
  * 12:00 AM, whereas a date-only *deadline* means "end of day" and should stay
  * date-only.
  *
- * Locale and timezone come from the runtime (undefined locale = the user's own),
- * so this follows the viewer's regional settings.
+ * Rendered in APP_TIMEZONE so every employee reads the same wall clock, and so
+ * a server-rendered timestamp matches the one the browser renders.
  */
-const dtfExact = new Intl.DateTimeFormat(undefined, {
+const dtfExact = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ,
   year: "numeric", month: "numeric", day: "numeric",
   hour: "numeric", minute: "2-digit",
 });

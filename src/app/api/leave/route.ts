@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse } from "@/lib/api";
+import { requireUserDateTime } from "@/lib/timezone";
 import { buildApprovalChain, createApprovalSteps } from "@/lib/approvals";
 import { businessDaysBetween } from "@/lib/utils";
 import { notifyMany } from "@/lib/notify";
@@ -44,8 +45,8 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const data = schema.parse(await req.json());
-    const start = new Date(data.startDate);
-    const end = new Date(data.endDate);
+    const start = requireUserDateTime(data.startDate, "startDate");
+    const end = requireUserDateTime(data.endDate, "endDate");
 
     // ── Handbook validations ──
     const errors: string[] = [];

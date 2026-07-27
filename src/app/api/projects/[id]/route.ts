@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
+import { parseUserDateTime } from "@/lib/timezone";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -60,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: data.status,
         clientId: data.clientId === undefined ? undefined : data.clientId || null,
         leadId: data.leadId === undefined ? undefined : data.leadId || null,
-        deadline: data.deadline ? new Date(data.deadline) : data.deadline === null ? null : undefined,
+        deadline: data.deadline ? parseUserDateTime(data.deadline) : data.deadline === null ? null : undefined,
       },
     });
 

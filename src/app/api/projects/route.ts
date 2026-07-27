@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
+import { parseUserDateTime } from "@/lib/timezone";
 
 export async function GET() {
   try {
@@ -54,8 +55,8 @@ export async function POST(req: NextRequest) {
         clientId: data.clientId || null,
         industry: data.industry,
         leadId: data.leadId || user.id,
-        startDate: data.startDate ? new Date(data.startDate) : null,
-        deadline: data.deadline ? new Date(data.deadline) : null,
+        startDate: data.startDate ? parseUserDateTime(data.startDate) : null,
+        deadline: data.deadline ? parseUserDateTime(data.deadline) : null,
         status: "ACTIVE",
         members: { create: data.memberIds.map((userId) => ({ userId })) },
       },

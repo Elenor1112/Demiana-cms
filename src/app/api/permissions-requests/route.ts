@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse } from "@/lib/api";
+import { requireUserDateTime } from "@/lib/timezone";
 import { buildApprovalChain, createApprovalSteps } from "@/lib/approvals";
 
 export async function GET(req: NextRequest) {
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
       data: {
         requesterId: user.id,
         type: data.type,
-        date: new Date(data.date),
+        date: requireUserDateTime(data.date, "date"),
         fromTime: data.fromTime,
         toTime: data.toTime,
         reason: data.reason,

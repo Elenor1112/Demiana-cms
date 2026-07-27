@@ -3,6 +3,7 @@ import { db } from "./db";
 import {
   can, canAssignTo, ASSIGNMENT_MATRIX, ASSIGNABLE_DEPARTMENTS, type SessionUser,
 } from "./rbac";
+import { requireUserDateTime, isDateOnly, zonedParts, APP_TIMEZONE } from "./timezone";
 import type { Prisma, TaskStatus } from "@prisma/client";
 
 /**
@@ -51,18 +52,17 @@ export async function canViewTask(user: SessionUser, taskId: string) {
 /**
  * Parse a deadline coming from the client.
  *
- * Accepts "2026-08-15" (date only) and "2026-08-15T14:30" from a
- * datetime-local input. JS parses a bare date string as UTC midnight, which in
- * a non-UTC zone lands on a different hour of the intended day; the date-only
- * branch pins it to *local* midnight instead, which the UI then renders as
- * date-only (no misleading "3:00 AM").
+ * Accepts "2026-08-15" (date only) and "2026-08-15T14:30" from the picker.
+ * Both are wall-clock strings with no zone, so they are resolved against
+ * APP_TIMEZONE — NOT the server's local zone. Using the server's zone meant a
+ * Cairo user's "1:30 PM" became 13:30 UTC on Vercel (which runs UTC) and read
+ * back as 4:30 PM; the same code on a Cairo laptop stored it correctly, which
+ * is why the bug only ever appeared in production.
+ *
+ * Throws on unparseable input rather than silently storing an Invalid Date.
  */
 export function parseDeadline(input: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
-    const [y, m, d] = input.split("-").map(Number);
-    return new Date(y, m - 1, d, 0, 0, 0, 0);
-  }
-  return new Date(input);
+  return requireUserDateTime(input, "deadline");
 }
 
 /**
@@ -72,20 +72,28 @@ export function parseDeadline(input: string): Date {
  * should not read as overdue at 00:01 on the day itself.
  */
 export function deadlineDueBy(deadline: Date): Date {
-  if (deadline.getHours() === 0 && deadline.getMinutes() === 0) {
-    const d = new Date(deadline);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  }
-  return deadline;
+  // Midnight *in the company's zone*, not the server's — on a UTC server
+  // getHours() would report a different hour and misclassify date-only
+  // deadlines, making them overdue at the wrong moment.
+  if (!isDateOnly(deadline)) return deadline;
+  return new Date(deadline.getTime() + 24 * 60 * 60 * 1000 - 1);
 }
 
-/** Human-readable deadline for notification text; includes time when set. */
+/**
+ * Human-readable deadline for notification text; includes time when set.
+ *
+ * Rendered in APP_TIMEZONE: this text is generated server-side and emailed /
+ * pushed, so it must read as the company's wall clock rather than the server's.
+ */
 export function formatDeadlineText(d: Date) {
-  const datePart = d.toDateString();
-  if (d.getHours() === 0 && d.getMinutes() === 0) return datePart;
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
+  const p = zonedParts(d);
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    weekday: "short", month: "short", day: "numeric", year: "numeric",
+  }).format(d);
+  if (p.hour === 0 && p.minute === 0) return datePart;
+  const hh = String(p.hour).padStart(2, "0");
+  const mm = String(p.minute).padStart(2, "0");
   return `${datePart} ${hh}:${mm}`;
 }
 
