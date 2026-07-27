@@ -3,7 +3,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Check, BellRing } from "lucide-react";
+import { toast } from "sonner";
+import { Bell, Check, BellRing, Trash2 } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import { usePush } from "@/lib/use-push";
 
@@ -87,6 +88,88 @@ export function NotificationBell() {
   });
 
   /**
+   * Restore a dismissed notification (Undo).
+   *
+   * Puts the row back at its original position — the list is ordered by
+   * createdAt, so re-sorting after insert lands it exactly where it was rather
+   * than at the top.
+   */
+  const restore = useMutation({
+    mutationFn: (n: Notif) =>
+      fetch(`/api/notifications/${n.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dismissed: false }),
+      }).then((res) => {
+        if (!res.ok) throw new Error("Failed to restore notification");
+        return res.json();
+      }),
+    onMutate: async (n: Notif) => {
+      await qc.cancelQueries({ queryKey: FEED_KEY });
+      const previous = qc.getQueryData<NotifFeed>(FEED_KEY);
+      qc.setQueryData<NotifFeed>(FEED_KEY, (old) => {
+        if (!old) return old;
+        if (old.notifications.some((x) => x.id === n.id)) return old; // already back
+        return {
+          notifications: [...old.notifications, n].sort(
+            (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+          ),
+          unread: old.unread + (n.read ? 0 : 1),
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _n, ctx) => {
+      if (ctx?.previous) qc.setQueryData(FEED_KEY, ctx.previous);
+      toast.error("Could not restore the notification");
+      qc.invalidateQueries({ queryKey: FEED_KEY });
+    },
+  });
+
+  /**
+   * Dismiss (soft delete) one notification.
+   *
+   * Removed from the cache immediately so the row animates out and the badge
+   * drops on the same frame; the server call follows. An unread row also
+   * decrements `unread`, which is what keeps the badge honest. On failure the
+   * whole previous feed is restored and the user is told.
+   */
+  const dismiss = useMutation({
+    mutationFn: (n: Notif) =>
+      fetch(`/api/notifications/${n.id}`, { method: "DELETE" }).then((res) => {
+        if (!res.ok) throw new Error("Failed to delete notification");
+        return res.json();
+      }),
+    onMutate: async (n: Notif) => {
+      await qc.cancelQueries({ queryKey: FEED_KEY });
+      const previous = qc.getQueryData<NotifFeed>(FEED_KEY);
+      qc.setQueryData<NotifFeed>(FEED_KEY, (old) => {
+        if (!old) return old;
+        const target = old.notifications.find((x) => x.id === n.id);
+        if (!target) return old;
+        return {
+          notifications: old.notifications.filter((x) => x.id !== n.id),
+          // Only an unread row was contributing to the badge.
+          unread: target.read ? old.unread : Math.max(0, old.unread - 1),
+        };
+      });
+      return { previous };
+    },
+    onSuccess: (_res, n) => {
+      // Undo rather than a confirm dialog — the row is soft-deleted, so putting
+      // it back is a single write.
+      toast.success("Notification deleted", {
+        action: { label: "Undo", onClick: () => restore.mutate(n) },
+      });
+    },
+    onError: (_err, _n, ctx) => {
+      if (ctx?.previous) qc.setQueryData(FEED_KEY, ctx.previous);
+      toast.error("Could not delete the notification");
+      qc.invalidateQueries({ queryKey: FEED_KEY });
+    },
+  });
+
+  /**
    * Click handler shared by linked and unlinked rows.
    *
    * `n.read` alone would not stop a double click — React can hand both events
@@ -100,6 +183,21 @@ export function NotificationBell() {
     markRead.mutate(n.id, {
       onSettled: () => inFlight.current.delete(n.id),
     });
+  }
+
+  /**
+   * Delete handler. Same in-flight guard as above so a double click sends one
+   * request; the optimistic removal makes a second click impossible anyway once
+   * React has re-rendered, but the events can land in the same frame.
+   */
+  const deleting = React.useRef(new Set<string>());
+  function deleteNotification(e: React.MouseEvent, n: Notif) {
+    // The row is a Link/button — stop the click from navigating or marking read.
+    e.preventDefault();
+    e.stopPropagation();
+    if (deleting.current.has(n.id)) return;
+    deleting.current.add(n.id);
+    dismiss.mutate(n, { onSettled: () => deleting.current.delete(n.id) });
   }
 
   React.useEffect(() => {
@@ -193,7 +291,10 @@ export function NotificationBell() {
                   You&apos;re all caught up 🎉
                 </div>
               ) : (
-                data.notifications.map((n) => {
+                // initial={false} so the list does not animate in on open —
+                // only deletions animate out.
+                <AnimatePresence initial={false}>
+                {data.notifications.map((n) => {
                   const body = (
                     <div
                       className={`flex gap-3 border-b border-border px-4 py-3 transition-colors hover:bg-accent/50 ${
@@ -205,7 +306,9 @@ export function NotificationBell() {
                           n.read ? "bg-transparent" : "bg-primary"
                         }`}
                       />
-                      <div className="min-w-0">
+                      {/* pr-7 reserves the trash button's width, so revealing it
+                          on hover never reflows the text beside it. */}
+                      <div className="min-w-0 flex-1 pr-7">
                         <div className="text-sm font-medium leading-tight">{n.title}</div>
                         {n.body && (
                           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
@@ -222,9 +325,8 @@ export function NotificationBell() {
                   // exists — the destination page renders its own not-found
                   // state, and the notification stays read either way, matching
                   // how Slack and Linear behave.
-                  return n.link ? (
+                  const row = n.link ? (
                     <Link
-                      key={n.id}
                       href={n.link}
                       onClick={() => {
                         openNotification(n);
@@ -235,7 +337,6 @@ export function NotificationBell() {
                     </Link>
                   ) : (
                     <button
-                      key={n.id}
                       type="button"
                       onClick={() => openNotification(n)}
                       className="block w-full text-left"
@@ -243,7 +344,36 @@ export function NotificationBell() {
                       {body}
                     </button>
                   );
-                })
+
+                  return (
+                    <motion.div
+                      key={n.id}
+                      // Collapsing height (not just opacity) is what pulls the
+                      // rows below upward. No `layout` prop: the height collapse
+                      // already produces the shift, and layout animations inside
+                      // a scroll container fight with the scroll position.
+                      exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="group relative overflow-hidden"
+                    >
+                      {row}
+                      {/* Hover-revealed delete. Sits above the row rather than
+                          inside it, so a Link cannot swallow the click. It also
+                          reveals on focus-visible, so it is keyboard-reachable
+                          without a pointer. */}
+                      <button
+                        type="button"
+                        aria-label="Delete notification"
+                        title="Delete notification"
+                        onClick={(e) => deleteNotification(e, n)}
+                        className="absolute right-2 top-2.5 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive group-hover:opacity-100"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </motion.div>
+                  );
+                })}
+                </AnimatePresence>
               )}
             </div>
           </motion.div>

@@ -749,11 +749,18 @@ model Notification {
   /// When the recipient read it. Null while unread; set once and kept for audit
   /// and response-time reporting.
   readAt    DateTime?
+  /// Soft delete. When set, the notification is hidden from the recipient's
+  /// feed and excluded from unread counts, but the row is retained for audit —
+  /// consistent with Department.archived, and it makes Undo a single write
+  /// back to null rather than re-inserting a row under a new id.
+  dismissedAt DateTime?
   meta      Json?
   createdAt DateTime         @default(now())
 
   @@index([userId, read])
   @@index([userId, createdAt])
+  // The feed filters on dismissedAt for every read, so it leads the composite.
+  @@index([userId, dismissedAt, createdAt])
 }
 
 /// A browser Web Push endpoint (one row per device/browser per user).

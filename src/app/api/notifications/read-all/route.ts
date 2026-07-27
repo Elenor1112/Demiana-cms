@@ -5,9 +5,10 @@ import { requireUser, toErrorResponse } from "@/lib/api";
 export async function POST() {
   try {
     const user = await requireUser();
-    // Scoped to unread so already-read rows keep their original readAt.
+    // Scoped to unread so already-read rows keep their original readAt, and to
+    // undismissed so "mark all read" only touches what the user can actually see.
     const { count } = await db.notification.updateMany({
-      where: { userId: user.id, read: false },
+      where: { userId: user.id, read: false, dismissedAt: null },
       data: { read: true, readAt: new Date() },
     });
     return NextResponse.json({ ok: true, count });
