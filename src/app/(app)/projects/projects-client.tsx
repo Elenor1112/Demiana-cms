@@ -39,7 +39,7 @@ export function ProjectsClient() {
   const can = useCan();
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
-  const { register, handleSubmit, reset } = useForm<any>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<any>();
 
   const { data, isLoading } = useQuery({
     queryKey: ["projects"],
@@ -136,11 +136,17 @@ export function ProjectsClient() {
           <div className="space-y-1.5"><Label>Name</Label><Input {...register("name", { required: true })} autoFocus /></div>
           <div className="space-y-1.5"><Label>Description</Label><Textarea {...register("description")} /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Client</Label>
-              <Select {...register("clientId")} defaultValue="">
-                <option value="">Internal</option>
+            {/* Required: the client is the top of the Client → Project → Task
+                hierarchy, and every task under this project inherits it. */}
+            <div className="space-y-1.5">
+              <Label>Client <span className="text-destructive">*</span></Label>
+              <Select {...register("clientId", { required: true })} defaultValue="">
+                <option value="" disabled>Select a client…</option>
                 {meta?.clients?.map((c: any) => <option key={c.id} value={c.id}>{c.company}</option>)}
               </Select>
+              {errors.clientId && (
+                <p className="text-xs text-destructive">A client is required.</p>
+              )}
             </div>
             <div className="space-y-1.5"><Label>Industry</Label><Input {...register("industry")} /></div>
           </div>

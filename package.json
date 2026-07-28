@@ -15,6 +15,8 @@
     "db:reset-ceo": "tsx prisma/reset-to-ceo.ts",
     "db:update-hours": "tsx prisma/update-working-hours.ts",
     "db:normalize-deadlines": "tsx prisma/normalize-deadlines.ts",
+    "db:sync-client-hierarchy": "tsx prisma/sync-client-hierarchy.ts --apply",
+    "db:sync-triggers": "tsx prisma/sync-triggers.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {
@@ -55,6 +57,7 @@
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
     "recharts": "^2.15.1",
+    "server-only": "0.0.1",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "web-push": "^3.6.7",

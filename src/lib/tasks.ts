@@ -4,6 +4,8 @@ import {
   can, canAssignTo, ASSIGNMENT_MATRIX, ASSIGNABLE_DEPARTMENTS, type SessionUser,
 } from "./rbac";
 import { requireUserDateTime, isDateOnly, zonedParts, APP_TIMEZONE } from "./timezone";
+// api.ts does not import this module, so there is no cycle.
+import { ApiError } from "./api";
 import type { Prisma, TaskStatus } from "@prisma/client";
 
 /**
@@ -137,6 +139,32 @@ export async function rollupSubtaskProgress(taskId: string) {
     where: { id: task.parentId },
     data: { progress: avg, ...(allDone ? { status: "DONE" } : {}) },
   });
+}
+
+/**
+ * Resolve the client a task belongs to.
+ *
+ * The hierarchy is Client → Project → Task, so a task's client is ALWAYS its
+ * project's client — never independently chosen. `requestedClientId` is only
+ * honoured for tasks with no project (ad-hoc internal work), which is why the
+ * API can keep accepting the old `clientId` field without it ever creating a
+ * mismatch.
+ *
+ * The database enforces the same rule via the task_sync_client trigger; this
+ * function exists so the API returns a correct value immediately and can report
+ * a bad projectId as a clean 400 instead of a constraint error.
+ */
+export async function resolveTaskClientId(
+  projectId: string | null | undefined,
+  requestedClientId: string | null | undefined
+): Promise<string | null> {
+  if (!projectId) return requestedClientId || null;
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { clientId: true },
+  });
+  if (!project) throw new ApiError(400, "The selected project does not exist.");
+  return project.clientId;
 }
 
 /**

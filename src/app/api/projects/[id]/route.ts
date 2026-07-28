@@ -41,7 +41,8 @@ const schema = z.object({
   name: z.string().optional(),
   description: z.string().optional().nullable(),
   status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"]).optional(),
-  clientId: z.string().optional().nullable(),
+  // May be changed, but never cleared — every project keeps a client.
+  clientId: z.string().min(1).optional(),
   leadId: z.string().optional().nullable(),
   deadline: z.string().optional().nullable(),
   memberIds: z.array(z.string()).optional(),
@@ -53,13 +54,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { id } = await params;
     const data = schema.parse(await req.json());
 
+    const before = await db.project.findUnique({
+      where: { id },
+      select: { id: true, name: true, clientId: true, _count: { select: { tasks: true } } },
+    });
+    if (!before) throw new ApiError(404, "Project not found");
+
+    // Reparenting to another client moves the project's whole body of work with
+    // it — every task under it inherits the new client (enforced by the
+    // project_cascade_client trigger, so it holds even for writes that bypass
+    // this route). Validate the target up front for a usable error.
+    const changingClient = data.clientId !== undefined && data.clientId !== before.clientId;
+    if (changingClient) {
+      const client = await db.client.findUnique({
+        where: { id: data.clientId! },
+        select: { id: true },
+      });
+      if (!client) throw new ApiError(400, "The selected client does not exist.");
+    }
+
     await db.project.update({
       where: { id },
       data: {
         name: data.name,
         description: data.description,
         status: data.status,
-        clientId: data.clientId === undefined ? undefined : data.clientId || null,
+        clientId: data.clientId,
         leadId: data.leadId === undefined ? undefined : data.leadId || null,
         deadline: data.deadline ? parseUserDateTime(data.deadline) : data.deadline === null ? null : undefined,
       },
@@ -70,6 +90,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.projectMember.createMany({ data: data.memberIds.map((userId) => ({ projectId: id, userId })) });
     }
 
+    // A client change rewrites every task's clientId via the cascade trigger,
+    // so it is recorded separately from an ordinary field edit.
+    if (changingClient) {
+      await audit({
+        actorId: user.id, action: "project.reassign_client", entity: "project", entityId: id,
+        oldValue: { clientId: before.clientId },
+        newValue: { clientId: data.clientId, tasksReassigned: before._count.tasks },
+      });
+    }
     await audit({ actorId: user.id, action: "project.update", entity: "project", entityId: id });
     const fresh = await db.project.findUnique({ where: { id } });
     return NextResponse.json({ project: fresh });

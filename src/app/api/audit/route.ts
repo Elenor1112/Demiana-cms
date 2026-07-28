@@ -7,10 +7,17 @@ export async function GET(req: NextRequest) {
     await requirePermission("Audit.View");
     const sp = req.nextUrl.searchParams;
     const entity = sp.get("entity");
+    // Per-record history, for the audit tab on a lead / task / employee. Hits
+    // the existing [entity, entityId] index, so it stays cheap even unfiltered
+    // by entity type.
+    const entityId = sp.get("entityId");
     const take = Math.min(Number(sp.get("take") ?? 100), 200);
 
     const logs = await db.auditLog.findMany({
-      where: entity ? { entity } : {},
+      where: {
+        ...(entity ? { entity } : {}),
+        ...(entityId ? { entityId } : {}),
+      },
       include: { actor: { select: { firstName: true, lastName: true, avatarUrl: true } } },
       orderBy: { createdAt: "desc" },
       take,

@@ -69,6 +69,34 @@ export const PERMISSIONS = {
   "Audit.View": "View audit logs",
   "Settings.Edit": "Edit company settings",
   "Policy.Manage": "Manage company policies",
+  // Sales — leads & pipeline
+  // Gates the Sales workspace itself: the sidebar section, every /sales route
+  // and the sales quick-actions. Held by the sales roles only — see
+  // canSeeSalesModule(). Granting this to anyone else makes the module visible
+  // to them, which is exactly the intended (and only) way to widen it.
+  "Sales.View": "Access the Sales workspace",
+  "Sales.ViewAll": "View every lead in the pipeline (not just your own)",
+  "Sales.LeadCreate": "Create leads",
+  "Sales.LeadEdit": "Edit leads you can see",
+  "Sales.LeadDelete": "Delete leads",
+  "Sales.Assign": "Assign leads and change lead ownership",
+  "Sales.ChangeStage": "Move leads between pipeline stages",
+  "Sales.Convert": "Convert a won lead into a client and project",
+  // Sales — activity objects
+  "Sales.MeetingManage": "Schedule and manage sales meetings",
+  "Sales.DiscoverySubmit": "Fill in and submit discovery briefs",
+  "Sales.FeedbackSubmit": "Submit post-meeting sales feedback",
+  "Sales.ProposalManage": "Create, send and track proposals",
+  "Sales.IdeaManage": "Create and manage sales ideas",
+  // Sales — oversight
+  "Sales.ViewReports": "View sales reports and the sales dashboard",
+  "Sales.ViewTeam": "View salesperson performance and the leaderboard",
+  /// Granted to Account Management. Unlocks the sales history (brief, feedback,
+  /// proposals) of leads that have ALREADY become clients, without exposing the
+  /// live pipeline. Deliberately does NOT make the Sales module visible — it
+  /// carries no navigation and no /sales route access, only the right to read
+  /// closed-deal history for an account being managed.
+  "Sales.ViewConverted": "Read the sales history of converted clients (no Sales workspace access)",
   // Job descriptions
   "JobDescription.ViewOwn": "View your own job description",
   "JobDescription.ViewAll": "View every employee's job description",
@@ -107,10 +135,16 @@ export const ROLE_META: Record<
     description: "Owns client relationships, projects and task assignment.",
   },
   SALES_MANAGER: {
-    name: "Sales Manager",
+    name: "PR & Sales Manager",
     level: 2,
     isSuperAdmin: false,
-    description: "Manages sales pipeline and client acquisition.",
+    description: "Owns the sales pipeline, assigns leads and converts won deals into clients.",
+  },
+  SALES_MEMBER: {
+    name: "Sales Member",
+    level: 4,
+    isSuperAdmin: false,
+    description: "Works their own assigned leads through the acquisition lifecycle.",
   },
   ART_DIRECTOR: {
     name: "Art Director",
@@ -200,6 +234,12 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "JobDescription.Upload",
     "JobDescription.Delete",
     "JobDescription.ViewAcknowledgments",
+    // Operations and Account Management pick the relationship up AFTER the
+    // handover: they can read the discovery brief, feedback and proposals of a
+    // lead that has already become a client, but the live pipeline stays with
+    // Sales. Deliberately not Sales.ViewAll.
+    "Sales.ViewConverted",
+    "Sales.IdeaManage",
   ],
   SALES_MANAGER: [
     ...baseEmployee,
@@ -209,6 +249,45 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Leave.Approve",
     "Permission.Approve",
     "Reports.View",
+    // Full reach over the pipeline: sees every lead regardless of owner, moves
+    // ownership around, and is the role that closes the loop by converting a
+    // won lead into a client + project.
+    "Sales.View",
+    "Sales.ViewAll",
+    "Sales.LeadCreate",
+    "Sales.LeadEdit",
+    "Sales.LeadDelete",
+    "Sales.Assign",
+    "Sales.ChangeStage",
+    "Sales.Convert",
+    "Sales.MeetingManage",
+    "Sales.DiscoverySubmit",
+    "Sales.FeedbackSubmit",
+    "Sales.ProposalManage",
+    "Sales.IdeaManage",
+    "Sales.ViewReports",
+    "Sales.ViewTeam",
+    "Sales.ViewConverted",
+    // Needed to nominate the account manager / project manager during
+    // conversion, and to build the owner dropdown.
+    "Project.Create",
+  ],
+  SALES_MEMBER: [
+    ...baseEmployee,
+    // Deliberately WITHOUT Sales.ViewAll: the visibility filter in lib/sales.ts
+    // narrows every query to leads this person owns. Widening one individual is
+    // a per-user ALLOW grant, not a role change.
+    "Sales.View",
+    "Sales.LeadCreate",
+    "Sales.LeadEdit",
+    "Sales.ChangeStage",
+    "Sales.MeetingManage",
+    "Sales.DiscoverySubmit",
+    "Sales.FeedbackSubmit",
+    "Sales.ProposalManage",
+    "Sales.IdeaManage",
+    // Their own numbers only — the reports API scopes by the same filter.
+    "Sales.ViewReports",
   ],
   ART_DIRECTOR: [
     ...baseEmployee,
@@ -340,6 +419,55 @@ export function jobDescriptionScope(user: SessionUser): JobDescriptionScope {
     return { kind: "department", departmentId: user.departmentId };
   }
   return { kind: "self" };
+}
+
+/**
+ * How far a viewer can see into the sales pipeline.
+ *
+ * Single source of truth for lead visibility — every sales route and the global
+ * search resolve scope through here rather than re-deriving the rules, which is
+ * what keeps "sales members manage only assigned leads" true everywhere at once.
+ *
+ *  - `all`       — super admins and holders of Sales.ViewAll (PR & Sales Manager).
+ *  - `own`       — sales members: leads they own or created.
+ *  - `converted` — Operations / Account Management: only leads that have already
+ *                  become clients, so the handover works without exposing the
+ *                  live pipeline.
+ *  - `none`      — no sales access at all.
+ */
+export type SalesScope =
+  | { kind: "all" }
+  | { kind: "own"; userId: string }
+  | { kind: "converted" }
+  | { kind: "none" };
+
+export function salesScope(user: SessionUser): SalesScope {
+  if (user.isSuperAdmin || can(user, "Sales.ViewAll")) return { kind: "all" };
+  if (can(user, "Sales.View")) return { kind: "own", userId: user.id };
+  if (can(user, "Sales.ViewConverted")) return { kind: "converted" };
+  return { kind: "none" };
+}
+
+/**
+ * Whether the Sales WORKSPACE is visible to this user — the sidebar section,
+ * the /sales routes, and the sales quick-actions in the command palette.
+ *
+ * Deliberately narrower than `salesScope`, and the distinction matters:
+ *
+ *  - This answers "does the Sales module exist for you at all", and is true
+ *    only for CEO, Operations Manager, PR & Sales Manager and Sales Members —
+ *    i.e. holders of Sales.View (plus super admins).
+ *  - `salesScope` answers "which lead ROWS may you read", and additionally
+ *    admits the `converted` scope so Account Management can still open the
+ *    discovery brief, feedback and proposals of a client they now own.
+ *
+ * Collapsing the two would force a choice between hiding the module and
+ * keeping the post-handover history reachable; keeping them separate satisfies
+ * both. Account Management therefore sees no Sales navigation and no pipeline,
+ * while `/api/sales/clients` still answers for the accounts they manage.
+ */
+export function canSeeSalesModule(user: SessionUser) {
+  return user.isSuperAdmin || can(user, "Sales.View");
 }
 
 /** Whether `viewer` may read `employeeId`'s job description. */

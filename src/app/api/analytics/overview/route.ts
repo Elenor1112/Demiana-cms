@@ -23,7 +23,7 @@ export async function GET() {
     const [
       totalTasks, openTasks, doneThisMonth, overdue,
       totalEmployees, activeProjects, totalClients, pendingLeave,
-      statusGroups, deptGroups, priorityGroups,
+      statusGroups, deptGroups, priorityGroups, clientGroups,
     ] = await Promise.all([
       db.task.count(),
       db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"] } } }),
@@ -38,6 +38,9 @@ export async function GET() {
       db.task.groupBy({ by: ["status"], _count: true }),
       db.task.groupBy({ by: ["departmentId"], _count: true }),
       db.task.groupBy({ by: ["priority"], _count: true }),
+      // Workload per client. Groups on Task.clientId directly — the reason that
+      // denormalized column exists.
+      db.task.groupBy({ by: ["clientId"], _count: true }),
     ]);
 
     // resolve department names
@@ -53,6 +56,17 @@ export async function GET() {
         count: g._count,
       }));
     const byPriority = priorityGroups.map((g) => ({ priority: g.priority, count: g._count }));
+
+    // Tasks per client, busiest first. Tasks with no client (internal work with
+    // no project) are grouped under "Internal" rather than dropped.
+    const clientRows = await db.client.findMany({ select: { id: true, company: true } });
+    const clientMap = new Map(clientRows.map((c) => [c.id, c.company]));
+    const byClient = clientGroups
+      .map((g) => ({
+        name: g.clientId ? (clientMap.get(g.clientId) ?? "Unknown") : "Internal",
+        count: g._count,
+      }))
+      .sort((a, b) => b.count - a.count);
 
     // 6-month completion trend
     const trend: { month: string; done: number; created: number }[] = [];
@@ -103,7 +117,7 @@ export async function GET() {
 
     return NextResponse.json({
       kpis: { totalTasks, openTasks, doneThisMonth, overdue, totalEmployees, activeProjects, totalClients, pendingLeave },
-      byStatus, byDepartment, byPriority, trend, upcoming,
+      byStatus, byDepartment, byPriority, byClient, trend, upcoming,
       birthdays: thisMonthBirthdays,
       me: { firstName: user.firstName },
     });

@@ -47,7 +47,16 @@ export function TaskBoard({
   const [q, setQ] = React.useState("");
   const [group, setGroup] = React.useState("");
   const [priority, setPriority] = React.useState("");
+  const [client, setClient] = React.useState("");
   const [createOpen, setCreateOpen] = React.useState(false);
+
+  // Client list for the filter. Shares the task-meta cache the create dialog
+  // already populates, so this adds no extra request in the common case.
+  const { data: meta } = useQuery({
+    queryKey: ["task-meta"],
+    queryFn: () => apiGet<{ clients: { id: string; company: string }[] }>("/api/tasks/meta"),
+    staleTime: 5 * 60_000,
+  });
 
   const openTaskId = params.get("task");
   const setOpenTask = (id: string | null) => {
@@ -61,10 +70,11 @@ export function TaskBoard({
   if (q) qp.set("q", q);
   if (group) qp.set("group", group);
   if (priority) qp.set("priority", priority);
+  if (client) qp.set("client", client);
   if (scope === "mine") qp.set("mine", "1");
   if (fixedProjectId) qp.set("project", fixedProjectId);
 
-  const queryKey = ["tasks", scope ?? "all", fixedProjectId ?? "", q, group, priority];
+  const queryKey = ["tasks", scope ?? "all", fixedProjectId ?? "", q, group, priority, client];
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => apiGet<{ tasks: TaskListItem[] }>(`/api/tasks?${qp.toString()}`),
@@ -104,6 +114,17 @@ export function TaskBoard({
           <option value="">Any priority</option>
           {Object.entries(PRIORITY_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
         </Select>
+        {/* Filtering by client hits Task.clientId directly — the denormalized
+            copy exists precisely so this needs no join through Project.
+            Hidden on a project board, where the client is already fixed. */}
+        {!fixedProjectId && (
+          <Select value={client} onChange={(e) => setClient(e.target.value)} className="w-40">
+            <option value="">Any client</option>
+            {meta?.clients?.map((c) => (
+              <option key={c.id} value={c.id}>{c.company}</option>
+            ))}
+          </Select>
+        )}
 
         {can("Task.Create") && (
           <Button onClick={() => setCreateOpen(true)}><Plus className="size-4" /> New task</Button>

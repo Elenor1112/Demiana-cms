@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser, requirePermission, audit, toErrorResponse } from "@/lib/api";
+import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
 import { parseUserDateTime } from "@/lib/timezone";
 
 export async function GET() {
@@ -36,7 +36,9 @@ export async function GET() {
 const schema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  clientId: z.string().optional().nullable(),
+  // Mandatory: a project is always work done FOR a client, and every task under
+  // it inherits that client.
+  clientId: z.string().min(1, "A client is required"),
   industry: z.string().optional(),
   leadId: z.string().optional().nullable(),
   startDate: z.string().optional().nullable(),
@@ -48,11 +50,20 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requirePermission("Project.Create");
     const data = schema.parse(await req.json());
+
+    // Verify the client exists before creating: the FK would reject it anyway,
+    // but as an opaque constraint error rather than a usable message.
+    const client = await db.client.findUnique({
+      where: { id: data.clientId },
+      select: { id: true },
+    });
+    if (!client) throw new ApiError(400, "The selected client does not exist.");
+
     const project = await db.project.create({
       data: {
         name: data.name,
         description: data.description,
-        clientId: data.clientId || null,
+        clientId: data.clientId,
         industry: data.industry,
         leadId: data.leadId || user.id,
         startDate: data.startDate ? parseUserDateTime(data.startDate) : null,

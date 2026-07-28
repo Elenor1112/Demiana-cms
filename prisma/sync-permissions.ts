@@ -7,7 +7,7 @@
  * not what you want against a live database.
  */
 import { PrismaClient, RoleKey } from "@prisma/client";
-import { PERMISSIONS, ROLE_PERMISSIONS, type PermissionKey } from "../src/lib/rbac";
+import { PERMISSIONS, ROLE_PERMISSIONS, ROLE_META, type PermissionKey } from "../src/lib/rbac";
 
 const db = new PrismaClient();
 
@@ -29,6 +29,22 @@ async function main() {
   if (removed.count) console.log(`  removed ${removed.count} stale permission(s)`);
 
   const permByKey = new Map((await db.permission.findMany()).map((p) => [p.key, p.id]));
+
+  // Create any role declared in ROLE_META but missing from the database.
+  // Adding a RoleKey to the enum is not enough on its own — without a Role row
+  // nobody can be assigned to it, and the permission loop below would skip it
+  // entirely. Existing rows are left alone apart from their metadata, so this
+  // never disturbs a live role.
+  for (const [key, meta] of Object.entries(ROLE_META) as [RoleKey, (typeof ROLE_META)[RoleKey]][]) {
+    await db.role.upsert({
+      where: { key },
+      update: { name: meta.name, description: meta.description, level: meta.level, isSuperAdmin: meta.isSuperAdmin },
+      create: {
+        key, name: meta.name, description: meta.description,
+        level: meta.level, isSuperAdmin: meta.isSuperAdmin,
+      },
+    });
+  }
 
   for (const role of await db.role.findMany()) {
     await db.rolePermission.deleteMany({ where: { roleId: role.id } });

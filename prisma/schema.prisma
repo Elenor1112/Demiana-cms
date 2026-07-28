@@ -19,6 +19,10 @@ enum RoleKey {
   OPERATIONS_MANAGER
   ACCOUNT_MANAGER
   SALES_MANAGER
+  /// PR & Sales team member. Works only the leads they own — the scoping is
+  /// enforced by the Sales.ViewAll permission, not by this enum, so an
+  /// individual can be widened with a per-user grant without changing role.
+  SALES_MEMBER
   ART_DIRECTOR
   DESIGNER
   CONTENT_CREATOR
@@ -162,6 +166,23 @@ model User {
   jobDescriptionUploads JobDescriptionVersion[] @relation("JobDescriptionUploader")
   jobDescriptionAcks    JobDescriptionAck[]     @relation("JobDescriptionAcks")
 
+  // ── Sales ──
+  ownedLeads        Lead[]                 @relation("LeadOwner")
+  createdLeads      Lead[]                 @relation("LeadCreatedBy")
+  leadOwnerHistory  LeadOwnerAssignment[]  @relation("LeadOwnerAssignmentOwner")
+  leadOwnerChanges  LeadOwnerAssignment[]  @relation("LeadOwnerAssignmentAssignedBy")
+  organizedMeetings SalesMeeting[]         @relation("MeetingOrganizer")
+  meetingSeats      SalesMeetingAttendee[]
+  discoveryBriefs   DiscoveryBrief[]       @relation("DiscoveryBriefSubmitter")
+  salesFeedback     SalesFeedback[]        @relation("SalesFeedbackAuthor")
+  proposalsPrepared Proposal[]             @relation("ProposalPreparedBy")
+  proposalEvents    ProposalEvent[]        @relation("ProposalEventActor")
+  salesComments     SalesComment[]         @relation("SalesCommentAuthor")
+  salesUploads      SalesAttachment[]      @relation("SalesAttachmentUploader")
+  salesIdeas        SalesIdea[]            @relation("SalesIdeaOwner")
+  salesIdeasCreated SalesIdea[]            @relation("SalesIdeaCreatedBy")
+  accountManaged    Client[]               @relation("ClientAccountManager")
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
@@ -221,8 +242,24 @@ model Client {
   notes         String?
   projects      Project[]
   tasks         Task[]
-  createdAt     DateTime     @default(now()) @db.Timestamptz
-  updatedAt     DateTime     @updatedAt @db.Timestamptz
+
+  /// Who owns the relationship once the deal is closed. Set by Convert to
+  /// Client; this is the handover point at which Account Management gains
+  /// access to the sales history (see Sales.ViewConverted).
+  accountManagerId String?
+  accountManager   User?   @relation("ClientAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
+
+  /// The lead this client was converted from, when it came through Sales.
+  /// Kept so the client page can surface the original discovery brief,
+  /// feedback and proposal history without copying any of it.
+  sourceLead Lead? @relation("LeadConvertedClient")
+
+  ideas SalesIdea[] @relation("SalesIdeaClient")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([accountManagerId])
 }
 
 enum ProjectStatus {
@@ -240,8 +277,11 @@ model Project {
   status      ProjectStatus @default(PLANNING)
   industry    String?
 
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id])
+  /// Every project belongs to exactly one client — the top of the
+  /// Client → Project → Task hierarchy. Restrict rather than cascade: deleting
+  /// a client with live projects should fail loudly, not silently destroy work.
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   leadId String?
   lead   User?   @relation("ProjectLead", fields: [leadId], references: [id])
@@ -303,6 +343,16 @@ model Task {
   status      TaskStatus   @default(TODO)
   priority    TaskPriority @default(MEDIUM)
 
+  /// Denormalized from `project.client`, NOT independently editable.
+  ///
+  /// Kept as a real column so task lists, Kanban filters and per-client reports
+  /// can filter on an indexed field instead of joining through Project on every
+  /// query. The copy is derived on write and additionally enforced by a database
+  /// trigger (see prisma/sql/task-client-sync.sql), so it cannot drift from the
+  /// project even via raw SQL.
+  ///
+  /// Nullable only because a task may exist with no project at all (ad-hoc
+  /// internal work); such a task may carry its own client directly.
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id])
 
@@ -950,4 +1000,733 @@ model JobDescriptionAck {
   /// version, which is what re-arms the requirement.
   @@unique([versionId, userId])
   @@index([userId])
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// SALES â€” LEADS, PIPELINE & CLIENT ACQUISITION
+//
+// The acquisition lifecycle: Lead â†’ Meeting(s) â†’ Discovery Brief â†’ Sales
+// Feedback â†’ Proposal â†’ Won â†’ Client. A Lead is the spine; every other object
+// hangs off it and is created in the context of one.
+//
+// Design notes:
+//  - Stage lives on the Lead as an enum, and stage transitions are recorded in
+//    LeadStageChange so cycle-time and funnel reporting never has to infer
+//    history from an audit log.
+//  - Attachments are stored as bytes (SalesAttachmentFile), mirroring
+//    JobDescriptionFile: the payload is split into its own table so listings
+//    stay cheap, and the platform needs no external object store.
+//  - Sales activity reuses the shape of the generic Activity model, but has its
+//    own table because Activity.taskId is task-bound and cascades with tasks;
+//    sales history must outlive any task.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  MEETING_SCHEDULED
+  DISCOVERY
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+  DORMANT
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum LeadSource {
+  REFERRAL
+  WEBSITE
+  SOCIAL_MEDIA
+  COLD_OUTREACH
+  EVENT
+  INBOUND_CALL
+  EMAIL_CAMPAIGN
+  PARTNER
+  ADVERTISING
+  OTHER
+}
+
+enum CompanySize {
+  MICRO
+  SMALL
+  MEDIUM
+  LARGE
+  ENTERPRISE
+}
+
+model Lead {
+  id String @id @default(cuid())
+
+  /// Human-readable identifier, e.g. LEAD-101. Generated like Task.code.
+  code String @unique
+
+  // â”€â”€ Company â”€â”€
+  companyName String
+  brandName   String?
+  industry    String?
+  companySize CompanySize?
+  website     String?
+  country     String?
+  city        String?
+
+  // â”€â”€ Primary contact â”€â”€
+  contactPerson String?
+  jobTitle      String?
+  email         String?
+  phone         String?
+
+  /// Social profiles as {platform, url} pairs. Json rather than a table: these
+  /// are display-only, never queried or joined, and the set of platforms
+  /// changes faster than a migration cycle.
+  socialLinks Json?
+
+  // â”€â”€ Pipeline â”€â”€
+  stage    LeadStage    @default(NEW)
+  priority LeadPriority @default(MEDIUM)
+  source   LeadSource   @default(OTHER)
+
+  /// Owner is the salesperson accountable. Sales members without
+  /// Sales.ViewAll see exactly the leads where this points at them.
+  ownerId String?
+  owner   User?   @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation("LeadCreatedBy", fields: [createdById], references: [id])
+
+  ownerHistory LeadOwnerAssignment[]
+
+  // â”€â”€ Commercials â”€â”€
+  estimatedValue    Decimal?  @db.Decimal(12, 2)
+  /// 0â€“100. Drives the weighted pipeline forecast (value Ã— probability).
+  probability       Int       @default(0)
+  expectedCloseDate DateTime? @db.Timestamptz
+
+  /// Free-form tags. String[] like Comment.mentions â€” no join table, because
+  /// tags are filtered with a simple `has` and never carry their own metadata.
+  tags  String[]
+  notes String?
+
+  // â”€â”€ Outcome â”€â”€
+  /// Why a lost deal was lost. Powers the Loss Reasons report.
+  lostReason String?
+  /// Stamped when the lead first enters WON. Write-once, like Task.startedAt.
+  wonAt      DateTime? @db.Timestamptz
+  lostAt     DateTime? @db.Timestamptz
+
+  /// Next scheduled touch. Denormalized onto the lead so the "Overdue
+  /// follow-ups" widget is an indexed scan rather than a correlated subquery
+  /// across meetings and activities.
+  nextFollowUpAt DateTime? @db.Timestamptz
+  lastActivityAt DateTime? @db.Timestamptz
+
+  // â”€â”€ Conversion â”€â”€
+  /// Set by Convert to Client. @unique enforces that a lead converts at most
+  /// once â€” a second conversion attempt fails at the database rather than
+  /// silently creating a duplicate client.
+  convertedClientId String?   @unique
+  convertedClient   Client?   @relation("LeadConvertedClient", fields: [convertedClientId], references: [id], onDelete: SetNull)
+  convertedAt       DateTime? @db.Timestamptz
+
+  // â”€â”€ Children â”€â”€
+  meetings     SalesMeeting[]
+  briefs       DiscoveryBrief[]
+  feedback     SalesFeedback[]
+  proposals    Proposal[]
+  activities   SalesActivity[]
+  comments     SalesComment[]
+  attachments  SalesAttachment[]
+  stageChanges LeadStageChange[]
+  ideas        SalesIdea[]       @relation("SalesIdeaLead")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([stage])
+  @@index([ownerId])
+  @@index([ownerId, stage])
+  @@index([expectedCloseDate])
+  @@index([nextFollowUpAt])
+  @@index([createdAt])
+}
+
+/// Append-only stage history. Mirrors WorkerAssignment's rationale: the enum on
+/// Lead answers "where is it now", these rows answer "how long did it sit in
+/// each stage", which is what average-sales-cycle and funnel reports need.
+model LeadStageChange {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  fromStage LeadStage?
+  toStage   LeadStage
+
+  actorId   String?
+  changedAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([leadId, changedAt])
+  @@index([toStage, changedAt])
+}
+
+/// Append-only ownership history, so reassignment does not erase who was
+/// accountable when. Same shape as WorkerAssignment.
+model LeadOwnerAssignment {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  owner   User?   @relation("LeadOwnerAssignmentOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId String?
+
+  assignedBy   User   @relation("LeadOwnerAssignmentAssignedBy", fields: [assignedById], references: [id])
+  assignedById String
+
+  assignedAt   DateTime  @default(now()) @db.Timestamptz
+  unassignedAt DateTime? @db.Timestamptz
+
+  @@index([leadId, assignedAt])
+  @@index([ownerId])
+}
+
+// â”€â”€ Meetings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum MeetingType {
+  DISCOVERY_CALL
+  INTRO_CALL
+  PRESENTATION
+  NEGOTIATION
+  FOLLOW_UP
+  ONBOARDING
+  OTHER
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum MeetingLocationType {
+  ONLINE
+  CLIENT_OFFICE
+  OUR_OFFICE
+  OTHER
+}
+
+model SalesMeeting {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  title        String
+  type         MeetingType         @default(DISCOVERY_CALL)
+  locationType MeetingLocationType @default(ONLINE)
+  location     String?
+  meetingLink  String?
+
+  /// Absolute instant. The client sends wall-clock text which the API resolves
+  /// against APP_TIMEZONE â€” the same rule as Task.deadline, so a meeting booked
+  /// at 2 PM in Cairo does not drift on a UTC host.
+  scheduledAt     DateTime @db.Timestamptz
+  durationMinutes Int      @default(60)
+
+  agenda           String?
+  preparationNotes String?
+
+  status MeetingStatus @default(SCHEDULED)
+
+  organizerId String
+  organizer   User   @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+
+  attendees    SalesMeetingAttendee[]
+  requirements MeetingRequirement[]
+  attachments  SalesAttachment[]
+  /// A meeting cannot be marked COMPLETED until one of these exists â€” the rule
+  /// is enforced in the API, and this relation is what it checks.
+  feedback     SalesFeedback[]
+
+  completedAt DateTime? @db.Timestamptz
+  outcome     String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([leadId])
+  @@index([scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([organizerId])
+}
+
+/// Internal participants. External attendees are captured on the lead's contact
+/// fields and in the brief, so this table stays a clean User join.
+model SalesMeetingAttendee {
+  meeting   SalesMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@id([meetingId, userId])
+}
+
+/// The pre-meeting readiness checklist. Rows are seeded from a fixed catalog on
+/// meeting creation (see MEETING_REQUIREMENTS in src/lib/sales.ts) rather than
+/// being free-form, so completion rates are comparable across meetings.
+model MeetingRequirement {
+  id        String       @id @default(cuid())
+  meeting   SalesMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId String
+
+  /// Stable key from the catalog, e.g. "company_researched".
+  key   String
+  label String
+  done  Boolean @default(false)
+  order Int     @default(0)
+
+  @@unique([meetingId, key])
+  @@index([meetingId])
+}
+
+// â”€â”€ Discovery brief â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum BriefStatus {
+  DRAFT
+  SUBMITTED
+}
+
+/// The native replacement for the Google Form.
+///
+/// Sections that are lists of free text (goals, services, metrics, channels)
+/// are String[] rather than child tables: they are only ever read back whole
+/// with the brief, and grouping reports run on them with `has`, so a join table
+/// would add cost without adding a query capability.
+model DiscoveryBrief {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  status BriefStatus @default(DRAFT)
+
+  // Company information
+  companyName   String?
+  brandName     String?
+  industry      String?
+  website       String?
+  socialMedia   Json?
+  contactPerson String?
+  jobTitle      String?
+  phone         String?
+  email         String?
+
+  // Business overview
+  businessDescription String?
+  products            String?
+  services            String?
+  usp                 String?
+  mission             String?
+  vision              String?
+
+  // Marketing goals â€” keys from MARKETING_GOALS, plus free text for "Other".
+  marketingGoals String[]
+  goalsOther     String?
+
+  // Target audience
+  audienceAge            String?
+  audienceGender         String?
+  audienceLocation       String?
+  audienceIncome         String?
+  audienceInterests      String?
+  audiencePainPoints     String?
+  audienceBuyingBehavior String?
+
+  // Competitors
+  topCompetitors        String?
+  brandsAdmired         String?
+  competitiveAdvantages String?
+  weaknesses            String?
+
+  // Current marketing
+  channelsUsed      String[]
+  marketingBudget   String?
+  previousAgency    String?
+  currentChallenges String?
+  brandPersonality  String?
+
+  // Brand assets â€” availability flags plus notes; the files themselves land in
+  // SalesAttachment tagged to this brief.
+  assetLogo            Boolean @default(false)
+  assetBrandGuidelines Boolean @default(false)
+  assetPhotos          Boolean @default(false)
+  assetVideos          Boolean @default(false)
+  assetContentLibrary  Boolean @default(false)
+  assetWebsite         Boolean @default(false)
+  assetNotes           String?
+
+  // Services requested & success metrics
+  servicesRequested String[]
+  servicesOther     String?
+  successMetrics    String[]
+  metricsOther      String?
+
+  additionalNotes String?
+
+  submittedById String?
+  submittedBy   User?     @relation("DiscoveryBriefSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedAt   DateTime? @db.Timestamptz
+
+  attachments SalesAttachment[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([leadId])
+}
+
+// â”€â”€ Sales feedback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum OpportunityTemperature {
+  COLD
+  WARM
+  HOT
+  VERY_HOT
+}
+
+enum DecisionTimeline {
+  IMMEDIATE
+  WITHIN_MONTH
+  ONE_TO_THREE_MONTHS
+  THREE_TO_SIX_MONTHS
+  LONGER
+  UNKNOWN
+}
+
+/// Post-meeting debrief. The opportunity score is COMPUTED from the structured
+/// factor fields (see scoreOpportunity in src/lib/sales.ts) and stored so that
+/// historical scores stay stable if the weighting is later retuned.
+model SalesFeedback {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  /// Optional: feedback is usually tied to the meeting it debriefs, which is
+  /// what unlocks marking that meeting COMPLETED.
+  meeting   SalesMeeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  meetingId String?
+
+  authorId String
+  author   User   @relation("SalesFeedbackAuthor", fields: [authorId], references: [id])
+
+  meetingDate DateTime?    @db.Timestamptz
+  meetingType MeetingType?
+  stage       LeadStage?
+
+  // â”€â”€ Scoring factors (1â€“5 unless noted) â”€â”€
+  budgetFit            Int?
+  decisionMakerPresent Boolean @default(false)
+  clientUrgency        Int?
+  engagementLevel      Int?
+  meetingOutcome       Int?
+  followUpCommitment   Boolean @default(false)
+  businessFit          Int?
+
+  /// Salesperson's own read, 1â€“10. Blended with the computed factors so a
+  /// human override is visible rather than silently discarded.
+  opportunityStrength Int?
+
+  /// 0â€“100, derived. Persisted for reporting stability.
+  /// One of the few DERIVED values deliberately stored. Every sales analytic is
+  /// computed live from the CRM tables; this is the exception, because the score
+  /// is a historical judgement rather than a current fact -- it records how the
+  /// opportunity looked when it was assessed. Recomputing on read would rewrite
+  /// past assessments the day the weighting is retuned, changing a salesperson's
+  /// record under them. The factors it derives from are stored alongside it, so
+  /// a recomputation is always possible; nothing is lost by persisting it.
+  opportunityScore Int                    @default(0)
+  temperature      OpportunityTemperature @default(COLD)
+
+  closingProbability      Int?
+  decisionTimeline        DecisionTimeline @default(UNKNOWN)
+  finalDecisionMaker      String?
+  clientPersonality       String?
+  objections              String?
+  buyingSignals           String?
+  operationalRisks        String?
+  proposalRecommendations String?
+  servicesRecommended     String[]
+
+  nextAction      String?
+  nextMeetingDate DateTime? @db.Timestamptz
+  internalNotes   String?
+
+  attachments SalesAttachment[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([leadId])
+  @@index([meetingId])
+  @@index([authorId])
+}
+
+// â”€â”€ Proposals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  VIEWED
+  UNDER_REVISION
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum ProposalEventType {
+  CREATED
+  SENT
+  OPENED
+  DOWNLOADED
+  VIEWED
+  REVISED
+  ACCEPTED
+  REJECTED
+  CONTRACT_SIGNED
+  EXPIRED
+}
+
+model Proposal {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  /// 1-based, monotonic per lead. A revision creates a NEW proposal row rather
+  /// than mutating one, so the acceptance history per version stays intact â€”
+  /// the JobDescriptionVersion pattern.
+  version Int
+  title   String
+  summary String?
+
+  amount   Decimal? @db.Decimal(12, 2)
+  currency String   @default("EGP")
+
+  status ProposalStatus @default(DRAFT)
+
+  preparedById String
+  preparedBy   User   @relation("ProposalPreparedBy", fields: [preparedById], references: [id])
+
+  preparedAt       DateTime  @default(now()) @db.Timestamptz
+  sentAt           DateTime? @db.Timestamptz
+  /// First open. Kept distinct from viewedAt (latest) so "time to open" is
+  /// answerable without scanning the event log.
+  openedAt         DateTime? @db.Timestamptz
+  downloadedAt     DateTime? @db.Timestamptz
+  viewedAt         DateTime? @db.Timestamptz
+  acceptedAt       DateTime? @db.Timestamptz
+  rejectedAt       DateTime? @db.Timestamptz
+  contractSignedAt DateTime? @db.Timestamptz
+  validUntil       DateTime? @db.Timestamptz
+
+  /// Counters over ProposalEvent, kept as columns rather than recomputed.
+  ///
+  /// These are append-only tallies of rows that already exist in the event log,
+  /// so they can never disagree with it for long, and they are read on every
+  /// proposal card in a list view. Deriving them would turn each list render
+  /// into a correlated aggregate per row for numbers that only ever increment.
+  /// The event log remains the source of truth and can rebuild both.
+  revisionCount Int @default(0)
+  viewCount     Int @default(0)
+
+  rejectionReason String?
+
+  events      ProposalEvent[]
+  attachments SalesAttachment[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([leadId, version])
+  @@index([leadId])
+  @@index([status])
+}
+
+/// Every proposal touchpoint, in order. This is the "timeline records every
+/// event" requirement â€” the denormalized timestamps on Proposal are derived
+/// from these rows for cheap reads.
+model ProposalEvent {
+  id         String   @id @default(cuid())
+  proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  proposalId String
+
+  type    ProposalEventType
+  /// Null for client-side events (an open registered by the client), which have
+  /// no internal actor.
+  actorId String?
+  actor   User?             @relation("ProposalEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  note String?
+  meta Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([proposalId, createdAt])
+}
+
+// â”€â”€ Ideas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum IdeaStatus {
+  NEW
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  IMPLEMENTED
+}
+
+enum IdeaImpact {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model SalesIdea {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+  category    String?
+
+  leadId String?
+  lead   Lead?   @relation("SalesIdeaLead", fields: [leadId], references: [id], onDelete: SetNull)
+
+  clientId String?
+  client   Client? @relation("SalesIdeaClient", fields: [clientId], references: [id], onDelete: SetNull)
+
+  priority        LeadPriority @default(MEDIUM)
+  estimatedImpact IdeaImpact   @default(MEDIUM)
+  status          IdeaStatus   @default(NEW)
+
+  ownerId String?
+  owner   User?   @relation("SalesIdeaOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation("SalesIdeaCreatedBy", fields: [createdById], references: [id])
+
+  /// Set when the idea is converted, so it cannot be converted twice and the
+  /// resulting work stays traceable back to the idea.
+  convertedTaskId    String?
+  convertedProjectId String?
+  convertedAt        DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([leadId])
+}
+
+// â”€â”€ Activity, comments & attachments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/// The sales timeline. Separate from the generic Activity model because that
+/// one carries a task relation and cascades with tasks; these rows must outlive
+/// any task and are queried by lead.
+model SalesActivity {
+  id String @id @default(cuid())
+
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  /// Nullable so system-generated entries (a proposal opened by the client)
+  /// are representable without inventing a user.
+  actorId String?
+
+  /// Stable verb key from SALES_ACTIVITY, e.g. "lead.created". Rendered through
+  /// a label map so wording can change without rewriting history.
+  verb    String
+  /// Optional human summary captured at write time.
+  summary String?
+  meta    Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([leadId, createdAt])
+  @@index([verb])
+  @@index([createdAt])
+}
+
+model SalesComment {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  authorId String
+  author   User   @relation("SalesCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  body     String
+  mentions String[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([leadId, createdAt])
+}
+
+/// Files and voice notes attached to any sales object.
+///
+/// Deliberately polymorphic via nullable FKs rather than a (type, id) pair:
+/// real foreign keys keep referential integrity and give cascade-on-delete for
+/// free, which a string entityId cannot. Exactly one parent is set â€” enforced
+/// by the API and by the sales_attachment_one_parent check constraint in
+/// prisma/sql/sales-attachment-parent.sql.
+model SalesAttachment {
+  id String @id @default(cuid())
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  meetingId String?
+  meeting   SalesMeeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  briefId String?
+  brief   DiscoveryBrief? @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  feedbackId String?
+  feedback   SalesFeedback? @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  proposalId String?
+  proposal   Proposal? @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  name        String
+  mimeType    String
+  size        Int
+  /// sha256 â€” used as the ETag and to detect re-uploads of identical bytes.
+  checksum    String
+  /// Voice notes are attachments with this flag, so the UI can render a player
+  /// instead of a download link without sniffing the mime type.
+  isVoiceNote Boolean @default(false)
+
+  uploadedById String?
+  uploadedBy   User?   @relation("SalesAttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  file SalesAttachmentFile?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([leadId])
+  @@index([meetingId])
+  @@index([briefId])
+  @@index([feedbackId])
+  @@index([proposalId])
+}
+
+/// The payload, split off so metadata queries never load blobs â€” exactly the
+/// JobDescriptionFile split.
+model SalesAttachmentFile {
+  attachmentId String          @id
+  attachment   SalesAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  data         Bytes
 }

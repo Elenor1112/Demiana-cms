@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(converted)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"try{console.log\\(require.resolve\\('server-only'\\)\\)}catch\\(e\\){console.log\\('unresolvable from project root'\\)}\")",
+      "Bash(node -e \"console.log\\('resolves to:', require.resolve\\('server-only'\\)\\)\")"
+    ]
+  }
+}

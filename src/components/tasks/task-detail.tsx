@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   X, Plus, Trash2, Send, CheckCircle2, Circle, GitBranch,
-  Clock, MessageSquare, Activity as ActivityIcon,
+  Clock, MessageSquare, Activity as ActivityIcon, Building2, FolderKanban,
 } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { Avatar, AvatarGroup } from "@/components/ui/avatar";
@@ -262,11 +262,27 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                     <TimestampValue value={task.deadline} placeholder="No deadline" />
                   )}
                 </MetaRow>
-                <MetaRow label="Project">
-                  <span className="text-sm">{task.project?.name ?? "—"}</span>
-                </MetaRow>
+                {/* Client above Project, mirroring the hierarchy. Client is
+                    derived from the project and is never editable here. */}
                 <MetaRow label="Client">
-                  <span className="text-sm">{task.client?.company ?? "—"}</span>
+                  {task.client ? (
+                    <span className="flex items-center gap-1.5 text-sm">
+                      <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
+                      {task.client.company}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Internal</span>
+                  )}
+                </MetaRow>
+                <MetaRow label="Project">
+                  {task.project ? (
+                    <span className="flex items-center gap-1.5 text-sm">
+                      <FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
+                      {task.project.name}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No project</span>
+                  )}
                 </MetaRow>
               </div>
 

@@ -5,7 +5,7 @@ import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from
 import { can } from "@/lib/rbac";
 import {
   nextTaskCode, logActivity, taskVisibilityFilter, parseDeadline, lifecycleStamps,
-  isAssignableBy, recordWorkerChange,
+  isAssignableBy, recordWorkerChange, resolveTaskClientId,
 } from "@/lib/tasks";
 import { notifyMany } from "@/lib/notify";
 import type { Prisma, TaskStatus } from "@prisma/client";
@@ -44,7 +44,18 @@ export async function GET(req: NextRequest) {
     const where: Prisma.TaskWhereInput = {
       ...(and.length ? { AND: and } : {}),
       parentId: sp.get("includeSubtasks") ? undefined : null,
-      ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }] } : {}),
+      // Search spans the hierarchy: typing a client or project name finds that
+      // account's work without having to know a task code.
+      ...(q
+        ? {
+            OR: [
+              { title: { contains: q, mode: "insensitive" as const } },
+              { code: { contains: q, mode: "insensitive" as const } },
+              { client: { company: { contains: q, mode: "insensitive" as const } } },
+              { project: { name: { contains: q, mode: "insensitive" as const } } },
+            ],
+          }
+        : {}),
       ...(status.length ? { status: { in: status as TaskStatus[] } } : {}),
       ...(group === "open" ? { status: { in: openStatuses } } : {}),
       ...(group === "closed" ? { status: { in: closedStatuses } } : {}),
@@ -82,6 +93,11 @@ const createSchema = z.object({
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
   status: z.enum(["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "DONE", "CANCELLED"]).default("TODO"),
   projectId: z.string().optional().nullable(),
+  /**
+   * Only honoured for tasks with NO project — a project's client always wins.
+   * Still accepted so existing API callers do not break; it is simply ignored
+   * when projectId is set.
+   */
   clientId: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
   parentId: z.string().optional().nullable(),
@@ -113,6 +129,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Client is DERIVED from the project, never taken from the payload when a
+    // project is set — the user is not asked for it at all.
+    const clientId = await resolveTaskClientId(data.projectId, data.clientId);
+
     const code = await nextTaskCode();
 
     // Server clock only — the client never supplies these.
@@ -132,7 +152,7 @@ export async function POST(req: NextRequest) {
         priority: data.priority,
         status: data.status,
         projectId: data.projectId || null,
-        clientId: data.clientId || null,
+        clientId,
         departmentId: data.departmentId || null,
         parentId: data.parentId || null,
         workerId: data.workerId || null,

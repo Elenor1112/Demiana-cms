@@ -5,7 +5,7 @@ import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from
 import {
   logActivity, rollupSubtaskProgress, statusDefaultProgress, canViewTask,
   parseDeadline, formatDeadlineText, lifecycleStamps,
-  workerAuthorization, isAssignableBy, recordWorkerChange,
+  workerAuthorization, isAssignableBy, recordWorkerChange, resolveTaskClientId,
 } from "@/lib/tasks";
 import { can } from "@/lib/rbac";
 import { notifyMany } from "@/lib/notify";
@@ -165,10 +165,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       now
     );
 
+    // Moving a task to another project moves it to that project's client too.
+    // Recomputed here so the response is correct immediately; the DB trigger
+    // guarantees it regardless of how the row is written.
+    const nextClientId =
+      data.projectId === undefined
+        ? undefined
+        : await resolveTaskClientId(data.projectId, before.clientId);
+
     await db.task.update({
       where: { id },
       data: {
         ...stamps,
+        clientId: nextClientId,
         title: data.title,
         description: data.description,
         status: data.status,

@@ -6,8 +6,8 @@ import { motion } from "framer-motion";
 import * as Icons from "lucide-react";
 import { Sparkles, ChevronsLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV, NAV_SECTIONS } from "@/lib/nav";
-import { useCan } from "@/components/session-context";
+import { NAV_SECTIONS, visibleNav } from "@/lib/nav";
+import { useCan, useCanSeeSalesModule } from "@/components/session-context";
 
 function Icon({ name, className }: { name: string; className?: string }) {
   const Cmp = (Icons as unknown as Record<string, React.FC<{ className?: string }>>)[name];
@@ -23,8 +23,9 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const can = useCan();
+  const canSeeSalesModule = useCanSeeSalesModule();
 
-  const visible = NAV.filter((item) => !item.permission || can(item.permission));
+  const visible = visibleNav({ can, canSeeSalesModule });
 
   return (
     <aside
@@ -68,8 +69,16 @@ export function Sidebar({
               )}
               <div className="space-y-0.5">
                 {items.map((item) => {
-                  const active =
-                    pathname === item.href || pathname.startsWith(item.href + "/");
+                  // A section index (/sales) is a prefix of all of its children,
+                  // so prefix-matching alone would light it up on every
+                  // sub-page. It stays active only on an exact match when a
+                  // more specific sibling exists.
+                  const hasDeeperSibling = visible.some(
+                    (other) => other !== item && other.href.startsWith(item.href + "/")
+                  );
+                  const active = hasDeeperSibling
+                    ? pathname === item.href
+                    : pathname === item.href || pathname.startsWith(item.href + "/");
                   return (
                     <Link
                       key={item.href}
