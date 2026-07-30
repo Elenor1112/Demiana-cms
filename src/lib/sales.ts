@@ -149,8 +149,8 @@ export const CLOSED_STAGES: LeadStage[] = ["WON", "LOST"];
  * to some of those and forgotten in the rest.
  */
 export const OPEN_STAGES: LeadStage[] = [
-  "NEW", "CONTACTED", "QUALIFIED", "MEETING_SCHEDULED",
-  "DISCOVERY", "PROPOSAL", "NEGOTIATION",
+  "NEW", "CONTACTED", "QUALIFIED", "DISCOVERY",
+  "MEETING_SCHEDULED", "PROPOSAL", "NEGOTIATION",
 ];
 
 /** Stages shown as pipeline columns, in lifecycle order. Exhaustive over
@@ -160,8 +160,8 @@ export const PIPELINE_STAGES: LeadStage[] = [
   "NEW",
   "CONTACTED",
   "QUALIFIED",
-  "MEETING_SCHEDULED",
   "DISCOVERY",
+  "MEETING_SCHEDULED",
   "PROPOSAL",
   "NEGOTIATION",
   "WON",
@@ -177,8 +177,11 @@ const STAGE_PROBABILITY: Record<LeadStage, number> = {
   NEW: 5,
   CONTACTED: 10,
   QUALIFIED: 25,
-  MEETING_SCHEDULED: 35,
-  DISCOVERY: 45,
+  // Swapped along with the stage order: probability has to keep rising through
+  // the funnel, or the weighted forecast would DROP when a deal advances from
+  // Discovery to a booked meeting.
+  DISCOVERY: 35,
+  MEETING_SCHEDULED: 45,
   PROPOSAL: 60,
   NEGOTIATION: 75,
   WON: 100,
@@ -320,6 +323,151 @@ export async function logSalesActivity(opts: {
     }),
     db.lead.update({ where: { id: opts.leadId }, data: { lastActivityAt: at } }),
   ]);
+}
+
+// ─── Won → Client synchronisation ────────────────────────────
+
+/**
+ * The client fields a lead maps onto.
+ *
+ * Kept as a function rather than inlined so the WON auto-sync and the manual
+ * Convert flow build the client from ONE definition — otherwise the record you
+ * get depends on which path created it.
+ *
+ * Address is composed from the lead's city/country, the only location data the
+ * pipeline captures. Blank parts are dropped so a lead with neither yields null
+ * rather than the string ", ".
+ */
+export function clientFieldsFromLead(lead: {
+  companyName: string;
+  contactPerson: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  industry: string | null;
+  notes: string | null;
+  city: string | null;
+  country: string | null;
+}) {
+  const address = [lead.city, lead.country].filter(Boolean).join(", ") || null;
+  return {
+    company: lead.companyName,
+    contactPerson: lead.contactPerson,
+    email: lead.email,
+    phone: lead.phone,
+    whatsapp: lead.whatsapp,
+    address,
+    industry: lead.industry,
+    notes: lead.notes,
+  };
+}
+
+/**
+ * Create or update the Client for a lead that has just been WON.
+ *
+ * Runs automatically the moment a lead's stage becomes WON, so the account team
+ * has the record before anyone opens the Convert dialog. Convert then adds the
+ * project and the manager nominations on top of the client this produced.
+ *
+ * ── How duplicates are prevented ──────────────────────────────
+ * Three layers, in order:
+ *  1. `Lead.convertedClientId` — if this lead already points at a client, that
+ *     client is UPDATED, never re-created. This is the common re-entry path
+ *     (a lead bounced out of WON and back, or edited after winning).
+ *  2. A case-insensitive match on `Client.company` — catches the client that
+ *     already exists because it was created by hand, or won through a
+ *     different lead for the same company. The existing row is adopted and
+ *     linked rather than duplicated.
+ *  3. `convertedClientId` is @unique at the database level, so two concurrent
+ *     requests cannot both win the race and produce two clients.
+ *
+ * ── What it will not overwrite ────────────────────────────────
+ * Updating an existing client only FILLS values, never clears them: a field the
+ * lead has nothing for leaves whatever the client already had. Losing a phone
+ * number the account team curated, because the originating lead never had one,
+ * would be a regression rather than a sync. `accountManagerId` is likewise only
+ * set when the client has none, so a re-sync cannot silently reassign an
+ * account that operations has already handed to someone.
+ *
+ * Returns the client and whether it was newly created, so the caller can log
+ * and notify accordingly. Accepts a transaction client so the caller can make
+ * this atomic with the stage change itself.
+ */
+export async function syncWonLeadToClient(
+  tx: Prisma.TransactionClient,
+  leadId: string,
+  opts: { accountManagerId?: string | null } = {}
+): Promise<{ client: { id: string; company: string }; created: boolean }> {
+  const lead = await tx.lead.findUnique({
+    where: { id: leadId },
+    select: {
+      id: true, companyName: true, contactPerson: true, email: true, phone: true,
+      whatsapp: true, industry: true, notes: true, city: true, country: true,
+      ownerId: true, convertedClientId: true,
+    },
+  });
+  if (!lead) throw new ApiError(404, "Lead not found.");
+
+  const fields = clientFieldsFromLead(lead);
+
+  // Only non-empty values participate in an update, so the "fill, never clear"
+  // rule above is expressed once here instead of at each call site.
+  const filled = Object.fromEntries(
+    Object.entries(fields).filter(([, v]) => v !== null && v !== undefined && v !== "")
+  );
+
+  // (1) Already linked → update that client in place.
+  if (lead.convertedClientId) {
+    const client = await tx.client.update({
+      where: { id: lead.convertedClientId },
+      data: filled,
+      select: { id: true, company: true },
+    });
+    return { client, created: false };
+  }
+
+  // (2) An unlinked client for the same company → adopt it.
+  const existing = await tx.client.findFirst({
+    where: { company: { equals: lead.companyName, mode: "insensitive" } },
+    select: { id: true, accountManagerId: true },
+  });
+
+  if (existing) {
+    const client = await tx.client.update({
+      where: { id: existing.id },
+      data: {
+        ...filled,
+        status: "ACTIVE",
+        // Only fill an unowned account; never reassign one that already has a
+        // manager, which would move who can see its contact details.
+        ...(existing.accountManagerId
+          ? {}
+          : { accountManagerId: opts.accountManagerId ?? lead.ownerId ?? null }),
+      },
+      select: { id: true, company: true },
+    });
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: { convertedClientId: client.id, convertedAt: new Date() },
+    });
+    return { client, created: false };
+  }
+
+  // (3) Nothing to reuse → create, and link in the same transaction so the
+  // @unique constraint on convertedClientId serialises any concurrent attempt.
+  const client = await tx.client.create({
+    data: {
+      ...fields,
+      status: "ACTIVE",
+      accountManagerId: opts.accountManagerId ?? lead.ownerId ?? null,
+    },
+    select: { id: true, company: true },
+  });
+  await tx.lead.update({
+    where: { id: lead.id },
+    data: { convertedClientId: client.id, convertedAt: new Date() },
+  });
+  return { client, created: true };
 }
 
 // ─── Notifications ───────────────────────────────────────────

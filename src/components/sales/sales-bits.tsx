@@ -43,6 +43,7 @@ export type LeadListItem = {
   jobTitle: string | null;
   email: string | null;
   phone: string | null;
+  whatsapp: string | null;
   website: string | null;
   industry: string | null;
   city: string | null;

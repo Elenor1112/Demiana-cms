@@ -17,7 +17,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { REQUEST_STATUS_META } from "@/lib/constants";
-import { formatDate } from "@/lib/utils";
+import { formatDate, todayInputMin, notInThePast } from "@/lib/utils";
 import { useSession } from "@/components/session-context";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -37,7 +37,7 @@ export function PermissionsClient() {
   const canApprove = me.isSuperAdmin || me.permissions.includes("Permission.Approve");
   const [scope, setScope] = React.useState<"mine" | "all">("mine");
   const [open, setOpen] = React.useState(false);
-  const { register, handleSubmit, reset } = useForm<any>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<any>();
 
   const { data, isLoading } = useQuery({
     queryKey: ["perms", scope],
@@ -125,7 +125,17 @@ export function PermissionsClient() {
             </Select>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5"><Label>Date</Label><Input type="date" {...register("date", { required: true })} /></div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("date", { required: true, validate: notInThePast("Date") })}
+              />
+              {errors.date?.message && (
+                <p className="text-xs text-destructive">{String(errors.date.message)}</p>
+              )}
+            </div>
             <div className="space-y-1.5"><Label>From</Label><Input type="time" {...register("fromTime")} /></div>
             <div className="space-y-1.5"><Label>To</Label><Input type="time" {...register("toTime")} /></div>
           </div>

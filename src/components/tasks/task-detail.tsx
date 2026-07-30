@@ -22,6 +22,7 @@ import { TASK_STATUS_META, TASK_STATUS_ORDER, PRIORITY_META } from "@/lib/consta
 import { formatExactDateTime, fullName } from "@/lib/utils";
 import { DeadlinePicker, toDeadlineInput } from "@/components/ui/deadline-picker";
 import { useSession, useCan } from "@/components/session-context";
+import { canChangeTaskStatus } from "@/lib/rbac";
 import type { TaskStatus } from "@prisma/client";
 
 export function TaskDetail({ taskId, onClose }: { taskId: string | null; onClose: () => void }) {
@@ -67,6 +68,16 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   // Delegation is scoped to your own tasks, so mirror the server's rule here to
   // avoid offering a control that would 403.
   const isAssignee = Boolean(task?.assignees?.some((a: any) => a.user.id === me.id));
+
+  // Status is the assigned employee's to report — see canChangeTaskStatus in
+  // lib/tasks.ts, which the API enforces. Mirrored here so a manager sees the
+  // status as read-only text rather than a dropdown that would 403 on change.
+  const canSetStatus = task
+    ? canChangeTaskStatus(me, {
+        assignees: (task.assignees ?? []).map((a: any) => ({ userId: a.user.id })),
+        workerId: task.workerId ?? null,
+      })
+    : false;
   const canSetWorker =
     can(task?.workerId ? "Task.ChangeWorker" : "Task.AssignWorker") ||
     (can("Task.DelegateOwnTasks") && isAssignee);
@@ -176,16 +187,27 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
               {/* meta grid */}
               {/* Single column on phones — the timestamp rows need the width. */}
               <div className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-border bg-background p-4 sm:grid-cols-2">
+                {/* Only the assigned employee reports status. Everyone else,
+                    managers included, sees it as a read-only badge. */}
                 <MetaRow label="Status">
-                  <Select
-                    value={task.status}
-                    onChange={(e) => changeStatus(e.target.value as TaskStatus)}
-                    className="h-8"
-                  >
-                    {TASK_STATUS_ORDER.map((s) => (
-                      <option key={s} value={s}>{TASK_STATUS_META[s].label}</option>
-                    ))}
-                  </Select>
+                  {canSetStatus ? (
+                    <Select
+                      value={task.status}
+                      onChange={(e) => changeStatus(e.target.value as TaskStatus)}
+                      className="h-8"
+                    >
+                      {TASK_STATUS_ORDER.map((s) => (
+                        <option key={s} value={s}>{TASK_STATUS_META[s].label}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <div>
+                      <StatusBadge status={task.status} />
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Only the assigned employee can change this.
+                      </p>
+                    </div>
+                  )}
                 </MetaRow>
                 <MetaRow label="Priority">
                   {canEditDetails ? (

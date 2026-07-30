@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { requireUserDateTime } from "@/lib/timezone";
+import { keepOrRequireFuture } from "@/lib/timezone";
 import {
   leadVisibilityFilter, assertCanEditLead, logSalesActivity, SALES_ACTIVITY, notifySales, requireSalesModule,
 } from "@/lib/sales";
@@ -59,7 +59,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.durationMinutes !== undefined) data.durationMinutes = body.durationMinutes;
     if (body.scheduledAt !== undefined) {
-      data.scheduledAt = requireUserDateTime(body.scheduledAt, "scheduledAt");
+      // Rescheduling must land today or later; leaving the existing time in
+      // place is fine even for a meeting that has already happened, which is
+      // what lets a past meeting still be marked completed or annotated.
+      data.scheduledAt = keepOrRequireFuture(body.scheduledAt, meeting.scheduledAt, "scheduledAt");
     }
 
     const completing = body.status === "COMPLETED" && meeting.status !== "COMPLETED";

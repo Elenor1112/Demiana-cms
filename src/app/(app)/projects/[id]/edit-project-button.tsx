@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useCan } from "@/components/session-context";
-import { toDateInputValue } from "@/lib/utils";
+import { toDateInputValue, todayInputMin } from "@/lib/utils";
 
 const STATUSES = ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
 
@@ -72,7 +72,14 @@ export function EditProjectButton({ project }: { project: any }) {
             </div>
             <div className="space-y-1.5">
               <Label>Deadline</Label>
-              <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+              {/* min is the browser-level guard; the API rejects a past date
+                  regardless, so a typed-in value cannot slip through. */}
+              <Input
+                type="date"
+                min={todayInputMin()}
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">

@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
 import { can } from "@/lib/rbac";
-import { requireUserDateTime } from "@/lib/timezone";
-import { leadVisibilityFilter, logSalesActivity, SALES_ACTIVITY, notifySales, requireSalesModule } from "@/lib/sales";
+import { requireFutureDateTime } from "@/lib/timezone";
+import {
+  leadVisibilityFilter, logSalesActivity, SALES_ACTIVITY, notifySales,
+  requireSalesModule, syncWonLeadToClient,
+} from "@/lib/sales";
 import { notifyMany } from "@/lib/notify";
 import { convertSchema } from "@/lib/sales-schemas";
 
@@ -42,8 +45,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (lead.stage !== "WON") {
       throw new ApiError(409, "Only a lead marked Won can be converted to a client.");
     }
+    // A won lead is now linked to its client automatically, so an existing link
+    // is the NORMAL state here rather than an error — what Convert still adds is
+    // the project and the manager nominations. Only a lead that already has a
+    // project is a genuine re-conversion.
     if (lead.convertedClientId) {
-      throw new ApiError(409, "This lead has already been converted to a client.");
+      const existingProject = await db.project.findFirst({
+        where: { clientId: lead.convertedClientId },
+        select: { id: true },
+      });
+      if (existingProject) {
+        throw new ApiError(409, "This lead has already been converted to a client and project.");
+      }
     }
 
     const body = convertSchema.parse(await req.json().catch(() => ({})));
@@ -64,18 +77,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const projectName = body.projectName || `${lead.brandName || lead.companyName} — Onboarding`;
 
     const result = await db.$transaction(async (tx) => {
-      const client = await tx.client.create({
-        data: {
-          company: clientName,
-          contactPerson: lead.contactPerson,
-          email: lead.email,
-          phone: lead.phone,
-          industry: lead.industry,
-          status: "ACTIVE",
-          notes: lead.notes,
-          accountManagerId: body.accountManagerId ?? null,
-        },
+      // Reuses the same create-or-update the WON auto-sync runs, so Convert can
+      // never produce a second client for a lead that already has one — it
+      // adopts and refreshes the existing record instead.
+      const { client } = await syncWonLeadToClient(tx, lead.id, {
+        accountManagerId: body.accountManagerId ?? null,
       });
+
+      // A name typed into the Convert dialog is an explicit override and wins
+      // over the lead's company name.
+      if (clientName !== client.company) {
+        await tx.client.update({ where: { id: client.id }, data: { company: clientName } });
+      }
 
       const project = await tx.project.create({
         data: {
@@ -88,8 +101,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           // The deal value becomes the opening project budget when no explicit
           // budget is given — the number was already agreed during the sale.
           budget: body.budget ?? lead.estimatedValue ?? null,
-          startDate: body.startDate ? requireUserDateTime(body.startDate, "startDate") : null,
-          deadline: body.deadline ? requireUserDateTime(body.deadline, "deadline") : null,
+          startDate: body.startDate ? requireFutureDateTime(body.startDate, "startDate") : null,
+          deadline: body.deadline ? requireFutureDateTime(body.deadline, "deadline") : null,
           members: {
             create: [
               ...(body.projectManagerId
@@ -103,16 +116,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       });
 
-      // Writing the link inside the transaction is what makes the conversion
-      // idempotent: convertedClientId is @unique, so a concurrent second call
-      // fails here rather than creating a second client.
+      // syncWonLeadToClient already wrote convertedClientId; this settles the
+      // remaining conversion state. convertedClientId is @unique, so a
+      // concurrent second call fails rather than creating a second client.
       const updatedLead = await tx.lead.update({
         where: { id: lead.id },
-        data: { convertedClientId: client.id, convertedAt: now, nextFollowUpAt: null },
+        data: { convertedAt: now, nextFollowUpAt: null },
         select: { id: true, code: true, companyName: true, ownerId: true },
       });
 
-      return { client, project, lead: updatedLead };
+      return { client: { ...client, company: clientName }, project, lead: updatedLead };
     });
 
     await logSalesActivity({

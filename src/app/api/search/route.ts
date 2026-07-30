@@ -66,7 +66,12 @@ export async function GET(req: NextRequest) {
           ? db.client.findMany({
               where: {
                 status: { not: "ARCHIVED" },
-                OR: [{ company: like }, { contactPerson: like }, { email: like }],
+                // Matching on email is deliberately gone: a hit would confirm a
+                // confidential address to someone the clients API masks it
+                // from, turning search into an oracle for the very field the
+                // restriction protects. Company and contact person are not
+                // confidential, so they stay searchable for everyone.
+                OR: [{ company: like }, { contactPerson: like }],
               },
               select: { id: true, company: true, contactPerson: true, industry: true },
               take,

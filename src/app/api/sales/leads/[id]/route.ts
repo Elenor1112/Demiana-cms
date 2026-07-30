@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
 import { can } from "@/lib/rbac";
-import { requireUserDateTime } from "@/lib/timezone";
+import { keepOrRequireFuture } from "@/lib/timezone";
 import {
   leadVisibilityFilter, assertCanEditLead, stageTransition, logSalesActivity,
-  SALES_ACTIVITY, notifySales, requireSalesModule,
+  SALES_ACTIVITY, notifySales, requireSalesModule, syncWonLeadToClient,
 } from "@/lib/sales";
 import { leadPatchSchema } from "@/lib/sales-schemas";
 import { LEAD_STAGE_META } from "@/lib/sales-constants";
@@ -130,6 +130,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         id: true, code: true, companyName: true, stage: true, ownerId: true,
         createdById: true, probability: true, wonAt: true, lostAt: true,
         estimatedValue: true, convertedClientId: true,
+        // Needed to tell "moved the date" from "resubmitted the same date".
+        expectedCloseDate: true, nextFollowUpAt: true,
       },
     });
     if (!existing) throw new ApiError(404, "Lead not found.");
@@ -157,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Scalar fields copy across only when present, so a partial patch never
     // nulls a field the client did not mention.
     const scalar = [
-      "companyName", "brandName", "contactPerson", "jobTitle", "phone", "email",
+      "companyName", "brandName", "contactPerson", "jobTitle", "phone", "whatsapp", "email",
       "website", "industry", "country", "city", "source", "priority", "notes",
       "lostReason",
     ] as const;
@@ -168,13 +170,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.tags !== undefined) data.tags = body.tags;
     if (body.socialLinks !== undefined) data.socialLinks = body.socialLinks as object;
     if (body.estimatedValue !== undefined) data.estimatedValue = body.estimatedValue ?? null;
+    // Scheduling dates may not be moved into the past, but re-sending the value
+    // already stored is allowed — a lead whose close date has slipped by must
+    // still be editable in every other respect.
     if (body.expectedCloseDate !== undefined) {
       data.expectedCloseDate = body.expectedCloseDate
-        ? requireUserDateTime(body.expectedCloseDate, "expectedCloseDate") : null;
+        ? keepOrRequireFuture(body.expectedCloseDate, existing.expectedCloseDate, "expectedCloseDate")
+        : null;
     }
     if (body.nextFollowUpAt !== undefined) {
       data.nextFollowUpAt = body.nextFollowUpAt
-        ? requireUserDateTime(body.nextFollowUpAt, "nextFollowUpAt") : null;
+        ? keepOrRequireFuture(body.nextFollowUpAt, existing.nextFollowUpAt, "nextFollowUpAt")
+        : null;
     }
     if (body.probability !== undefined && !stageChanging) data.probability = body.probability;
     if (ownerChanging) data.owner = body.ownerId ? { connect: { id: body.ownerId } } : { disconnect: true };
@@ -211,6 +218,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         meta: { from: existing.stage, to: body.stage },
         at: now,
       });
+
+      // Winning a deal creates (or refreshes) the client immediately, rather
+      // than waiting for someone to open the Convert dialog. Convert still
+      // exists — it adds the project and the manager nominations — but the
+      // client record now always exists the moment the deal is marked Won.
+      //
+      // Done in its own transaction so a failure here cannot roll back the
+      // stage change that has already been recorded and announced; the sync is
+      // idempotent, so a later Convert simply updates the same row.
+      if (body.stage === "WON") {
+        try {
+          const { client, created } = await db.$transaction((tx) =>
+            syncWonLeadToClient(tx, id)
+          );
+          await logSalesActivity({
+            leadId: id,
+            actorId: user.id,
+            verb: SALES_ACTIVITY.CLIENT_CONVERTED,
+            summary: created
+              ? `Client created: ${client.company}`
+              : `Client updated: ${client.company}`,
+            meta: { clientId: client.id, auto: true, created },
+          });
+          await audit({
+            actorId: user.id,
+            action: created ? "client.create" : "client.update",
+            entity: "client",
+            entityId: client.id,
+            newValue: { company: client.company, fromLead: existing.code, auto: true },
+          });
+        } catch (e) {
+          // A sync failure must not fail the stage change: the deal IS won, and
+          // the client can be reconciled by re-saving or via Convert.
+          console.error("won-lead client sync failed", e);
+        }
+      }
 
       if (body.stage === "WON" || body.stage === "LOST") {
         const won = body.stage === "WON";

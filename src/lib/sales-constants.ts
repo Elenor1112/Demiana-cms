@@ -34,8 +34,8 @@ export const LEAD_STAGE_META: Record<
   NEW: { label: "New", color: "#64748B", group: "open" },
   CONTACTED: { label: "Contacted", color: "#0EA5E9", group: "open" },
   QUALIFIED: { label: "Qualified", color: "#06B6D4", group: "open" },
-  MEETING_SCHEDULED: { label: "Meeting Scheduled", color: "#8B5CF6", group: "open" },
   DISCOVERY: { label: "Discovery", color: "#8B5CF6", group: "open" },
+  MEETING_SCHEDULED: { label: "Meeting Scheduled", color: "#8B5CF6", group: "open" },
   PROPOSAL: { label: "Proposal", color: "#F59E0B", group: "open" },
   NEGOTIATION: { label: "Negotiation", color: "#F97316", group: "open" },
   WON: { label: "Won", color: "#22C55E", group: "closed" },
@@ -48,8 +48,8 @@ export const LEAD_STAGE_ORDER: LeadStage[] = [
   "NEW",
   "CONTACTED",
   "QUALIFIED",
-  "MEETING_SCHEDULED",
   "DISCOVERY",
+  "MEETING_SCHEDULED",
   "PROPOSAL",
   "NEGOTIATION",
   "WON",
@@ -65,13 +65,17 @@ export const LEAD_STAGE_ORDER: LeadStage[] = [
  * sitting in it. CONTACTED, MEETING_SCHEDULED and DORMANT are all reachable
  * from the lead dialog and the detail view, so they each need a home here.
  * Mirrors PIPELINE_STAGES in lib/sales.ts; kept here for client use.
+ *
+ * Discovery precedes Meeting Scheduled: the brief is what qualifies the deal
+ * and decides whether a meeting is worth booking, so the board reads in the
+ * order the work actually happens.
  */
 export const PIPELINE_COLUMNS: LeadStage[] = [
   "NEW",
   "CONTACTED",
   "QUALIFIED",
-  "MEETING_SCHEDULED",
   "DISCOVERY",
+  "MEETING_SCHEDULED",
   "PROPOSAL",
   "NEGOTIATION",
   "WON",

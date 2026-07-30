@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
 import { can } from "@/lib/rbac";
-import { requireUserDateTime } from "@/lib/timezone";
+import { requireFutureDateTime } from "@/lib/timezone";
 import {
   leadVisibilityFilter, nextLeadCode, logSalesActivity,
-  SALES_ACTIVITY, notifySales, requireSalesModule,
+  SALES_ACTIVITY, notifySales, requireSalesModule, OPEN_STAGES,
 } from "@/lib/sales";
 import { leadCreateSchema } from "@/lib/sales-schemas";
 import type { LeadStage, Prisma } from "@prisma/client";
@@ -56,10 +56,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const openStages: LeadStage[] = [
-      "NEW", "CONTACTED", "QUALIFIED", "MEETING_SCHEDULED",
-      "DISCOVERY", "PROPOSAL", "NEGOTIATION",
-    ];
+    // Imported rather than re-listed: a stage added to (or reordered in) the
+    // funnel must not silently fall out of this filter.
+    const openStages: LeadStage[] = OPEN_STAGES;
 
     const where: Prisma.LeadWhereInput = {
       ...(and.length ? { AND: and } : {}),
@@ -122,6 +121,7 @@ export async function POST(req: NextRequest) {
         contactPerson: data.contactPerson,
         jobTitle: data.jobTitle,
         phone: data.phone,
+        whatsapp: data.whatsapp,
         email: data.email,
         website: data.website,
         industry: data.industry,
@@ -138,9 +138,9 @@ export async function POST(req: NextRequest) {
         socialLinks: data.socialLinks as object | undefined,
         estimatedValue: data.estimatedValue,
         probability: data.probability,
-        expectedCloseDate: requireUserDateTime(data.expectedCloseDate, "expectedCloseDate"),
+        expectedCloseDate: requireFutureDateTime(data.expectedCloseDate, "expectedCloseDate"),
         nextFollowUpAt: data.nextFollowUpAt
-          ? requireUserDateTime(data.nextFollowUpAt, "nextFollowUpAt")
+          ? requireFutureDateTime(data.nextFollowUpAt, "nextFollowUpAt")
           : null,
         lastActivityAt: now,
         // The opening row of the stage history, so time-in-stage is measurable

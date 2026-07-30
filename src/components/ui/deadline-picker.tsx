@@ -6,7 +6,7 @@ import {
 } from "date-fns";
 import { Calendar, Clock, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Popover } from "@/components/ui/popover";
-import { cn, formatDate, toDateTimeInputValue } from "@/lib/utils";
+import { cn, formatDate, toDateTimeInputValue, todayInputMin } from "@/lib/utils";
 
 /**
  * Deadline picker — a date control and a time control that write to one value.
@@ -62,11 +62,20 @@ export function DeadlinePicker({
   onChange,
   disabled,
   id,
+  /**
+   * Earliest selectable day, "yyyy-MM-dd". Defaults to today in the company
+   * zone: a deadline in the past is never a valid thing to schedule, and the
+   * server rejects one anyway (requireFutureDateTime).
+   *
+   * Pass `allowPast` to opt out for a field that legitimately records history.
+   */
+  allowPast = false,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
   id?: string;
+  allowPast?: boolean;
 }) {
   const { date, time } = splitValue(value);
   const [dateOpen, setDateOpen] = React.useState(false);
@@ -161,7 +170,12 @@ export function DeadlinePicker({
       )}
 
       <Popover open={dateOpen} onClose={() => setDateOpen(false)} anchorRef={dateRef} className="w-[17rem]">
-        <CalendarGrid selected={selected} onSelect={setDate} onClear={() => { onChange(""); setDateOpen(false); }} />
+        <CalendarGrid
+          selected={selected}
+          onSelect={setDate}
+          onClear={() => { onChange(""); setDateOpen(false); }}
+          minKey={allowPast ? undefined : todayInputMin()}
+        />
       </Popover>
 
       <Popover open={timeOpen} onClose={() => setTimeOpen(false)} anchorRef={timeRef} className="w-[15rem]">
@@ -175,10 +189,13 @@ function CalendarGrid({
   selected,
   onSelect,
   onClear,
+  /** Earliest selectable day as "yyyy-MM-dd"; undefined allows any day. */
+  minKey,
 }: {
   selected: Date | null;
   onSelect: (d: Date) => void;
   onClear: () => void;
+  minKey?: string;
 }) {
   const [cursor, setCursor] = React.useState(() => selected ?? new Date());
 
@@ -221,19 +238,26 @@ function CalendarGrid({
           const isSelected = selected ? isSameDay(day, selected) : false;
           const today = isToday(day);
           const outside = !isSameMonth(day, cursor);
+          // Compared as "yyyy-MM-dd" strings, which sort lexicographically —
+          // no Date arithmetic, so no off-by-one from a DST boundary.
+          const past = minKey ? toDateKey(day) < minKey : false;
           return (
             <button
               key={day.toISOString()}
               type="button"
+              disabled={past}
               onClick={() => onSelect(day)}
               aria-label={day.toDateString()}
               aria-current={today ? "date" : undefined}
               aria-pressed={isSelected}
+              aria-disabled={past || undefined}
+              title={past ? "Past dates cannot be selected" : undefined}
               className={cn(
                 "flex size-8 items-center justify-center rounded-lg text-sm transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 outside && "text-muted-foreground/40",
-                !isSelected && !outside && "hover:bg-accent",
+                past && "cursor-not-allowed text-muted-foreground/30 line-through",
+                !isSelected && !outside && !past && "hover:bg-accent",
                 // Today is outlined; the selection is filled — so both stay
                 // legible when today *is* the selected day.
                 today && !isSelected && "font-semibold text-primary ring-1 ring-inset ring-primary/40",

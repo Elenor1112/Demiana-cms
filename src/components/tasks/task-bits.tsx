@@ -119,6 +119,9 @@ export type TaskListItem = {
   progress: number;
   deadline?: string | null;
   assignees: { user: { id: string; firstName: string; lastName: string; avatarUrl?: string | null } }[];
+  /** The delegated executor, when one is set. Needed to decide who may change
+   *  the status — see canChangeTaskStatus in lib/rbac.ts. */
+  worker?: { id: string; firstName: string; lastName: string; avatarUrl?: string | null } | null;
   labels: { label: { id: string; name: string; color: string } }[];
   project?: { id: string; name: string } | null;
   client?: { id: string; company: string } | null;

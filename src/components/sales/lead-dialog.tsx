@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, todayInputMin, notInThePast } from "@/lib/utils";
 import {
   LEAD_STAGE_ORDER, LEAD_STAGE_META, LEAD_SOURCE_META, LEAD_PRIORITY_META,
   COMPANY_SIZE_META,
@@ -59,6 +59,7 @@ export function LeadDialog({
     jobTitle: string;
     email: string;
     phone: string;
+    whatsapp: string;
     website: string;
     industry: string;
     companySize: string;
@@ -100,6 +101,7 @@ export function LeadDialog({
       jobTitle: lead?.jobTitle ?? "",
       email: lead?.email ?? "",
       phone: lead?.phone ?? "",
+      whatsapp: lead?.whatsapp ?? "",
       website: lead?.website ?? "",
       industry: lead?.industry ?? "",
       companySize: "",
@@ -146,6 +148,7 @@ export function LeadDialog({
         jobTitle: keep(v.jobTitle),
         email: keep(v.email),
         phone: keep(v.phone),
+        whatsapp: v.whatsapp || undefined,
         website: keep(v.website),
         industry: keep(v.industry),
         companySize: v.companySize || undefined,
@@ -290,6 +293,11 @@ export function LeadDialog({
             <Field label="Phone number" required={!editing} error={errors.phone}>
               <Input {...register("phone", req("Phone number"))} aria-invalid={Boolean(errors.phone)} />
             </Field>
+            {/* Optional, unlike the other contact fields: not every prospect
+                uses WhatsApp, and it carries over to the client on a win. */}
+            <Field label="WhatsApp" hint="Optional">
+              <Input {...register("whatsapp")} />
+            </Field>
           </div>
         </Section>
 
@@ -367,12 +375,21 @@ export function LeadDialog({
             <Field label="Expected closing date" required={!editing} error={errors.expectedCloseDate}>
               <Input
                 type="date"
-                {...register("expectedCloseDate", editing ? {} : { required: "Expected closing date is required" })}
+                min={todayInputMin()}
+                {...register("expectedCloseDate", {
+                  ...(editing ? {} : { required: "Expected closing date is required" }),
+                  validate: notInThePast("Expected closing date"),
+                })}
                 aria-invalid={Boolean(errors.expectedCloseDate)}
               />
             </Field>
-            <Field label="Next follow-up" hint="Optional">
-              <Input type="date" {...register("nextFollowUpAt")} />
+            <Field label="Next follow-up" hint="Optional" error={errors.nextFollowUpAt}>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("nextFollowUpAt", { validate: notInThePast("Next follow-up") })}
+                aria-invalid={Boolean(errors.nextFollowUpAt)}
+              />
             </Field>
           </div>
         </Section>

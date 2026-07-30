@@ -235,8 +235,14 @@ model Client {
   id            String       @id @default(cuid())
   company       String
   contactPerson String?
+  /// Confidential contact details. Readable only by the CEO, the Operations
+  /// Manager and this client's own account manager — see clientContactScope()
+  /// in lib/rbac.ts, which every route resolves through. Everyone else gets the
+  /// client record with these fields masked.
   email         String?
   phone         String?
+  whatsapp      String?
+  address       String?
   industry      String?
   status        ClientStatus @default(ACTIVE)
   notes         String?
@@ -1082,6 +1088,9 @@ model Lead {
   jobTitle      String?
   email         String?
   phone         String?
+  /// Carried over to Client.whatsapp when the deal is won, so the account team
+  /// inherits the channel the deal was actually worked on.
+  whatsapp      String?
 
   /// Social profiles as {platform, url} pairs. Json rather than a table: these
   /// are display-only, never queried or joined, and the set of platforms

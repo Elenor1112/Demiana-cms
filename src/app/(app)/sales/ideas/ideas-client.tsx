@@ -21,6 +21,7 @@ import {
   EmptyState, CardGridSkeleton, formatRelative, type PersonRef,
 } from "@/components/sales/sales-bits";
 import { Field } from "@/components/sales/lead-dialog";
+import { todayInputMin } from "@/lib/utils";
 import { useSalesMeta } from "@/components/sales/use-sales-meta";
 import {
   IDEA_STATUS_META, IDEA_IMPACT_META, LEAD_PRIORITY_META,
@@ -451,7 +452,12 @@ function ConvertIdeaDialog({ idea, onClose }: { idea: IdeaRow; onClose: () => vo
           </Select>
         </Field>
         <Field label="Deadline">
-          <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          <Input
+            type="date"
+            min={todayInputMin()}
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+          />
         </Field>
 
         <div className="flex justify-end gap-2 border-t border-border pt-4">

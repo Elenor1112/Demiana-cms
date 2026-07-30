@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
 import { can } from "@/lib/rbac";
-import { requireUserDateTime } from "@/lib/timezone";
+import { requireFutureDateTime } from "@/lib/timezone";
 import { nextTaskCode, logActivity } from "@/lib/tasks";
 import { requireSalesModule } from "@/lib/sales";
 import { ideaPatchSchema, ideaConvertSchema } from "@/lib/sales-schemas";
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           status: "PLANNING",
           clientId,
           leadId: idea.ownerId,
-          deadline: body.deadline ? requireUserDateTime(body.deadline, "deadline") : null,
+          deadline: body.deadline ? requireFutureDateTime(body.deadline, "deadline") : null,
         },
       });
       await db.salesIdea.update({
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         projectId: body.projectId || null,
         clientId: taskClientId,
         createdById: user.id,
-        deadline: body.deadline ? requireUserDateTime(body.deadline, "deadline") : null,
+        deadline: body.deadline ? requireFutureDateTime(body.deadline, "deadline") : null,
         assignedAt: body.assigneeIds.length ? now : null,
         assignees: { create: body.assigneeIds.map((userId) => ({ userId })) },
       },

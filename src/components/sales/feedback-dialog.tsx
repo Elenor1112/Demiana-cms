@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, Section } from "./lead-dialog";
+import { todayInputMin, notInThePast } from "@/lib/utils";
 import { TemperatureBadge } from "./sales-bits";
 import { scoreOpportunity, SCORE_FACTOR_LABELS } from "@/lib/opportunity-score";
 import {
@@ -70,7 +71,7 @@ export function FeedbackDialog({
     internalNotes: string;
   };
 
-  const { register, handleSubmit, reset, control } = useForm<FormValues>();
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<FormValues>();
   const [services, setServices] = React.useState<string[]>([]);
 
   React.useEffect(() => {
@@ -204,6 +205,10 @@ export function FeedbackDialog({
                 </Select>
               </Field>
             )}
+            {/* Deliberately NOT bounded to today: this records when a meeting
+                that has already happened took place, so a past date is the
+                normal case. The future-date rule applies to scheduling fields
+                (Next meeting date, below), not to historical ones. */}
             <Field label="Meeting date"><Input type="date" {...register("meetingDate")} /></Field>
             <Field label="Meeting type">
               <Select {...register("meetingType")}>
@@ -311,8 +316,13 @@ export function FeedbackDialog({
         <Section title="Next steps">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Next action"><Input {...register("nextAction")} /></Field>
-            <Field label="Next meeting date" hint="Becomes the lead's follow-up date">
-              <Input type="date" {...register("nextMeetingDate")} />
+            <Field label="Next meeting date" hint="Becomes the lead's follow-up date" error={errors.nextMeetingDate}>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("nextMeetingDate", { validate: notInThePast("Next meeting date") })}
+                aria-invalid={Boolean(errors.nextMeetingDate)}
+              />
             </Field>
           </div>
           <div className="mt-3">

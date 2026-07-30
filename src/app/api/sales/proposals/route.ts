@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { requireUserDateTime } from "@/lib/timezone";
+import { requireFutureDateTime } from "@/lib/timezone";
 import {
-  leadVisibilityFilter, assertCanEditLead, logSalesActivity, SALES_ACTIVITY, requireSalesModule,
+  leadVisibilityFilter, assertCanEditLead, logSalesActivity, SALES_ACTIVITY,
+  requireSalesModule, stageProbability,
 } from "@/lib/sales";
 import { proposalCreateSchema } from "@/lib/sales-schemas";
 import type { ProposalStatus } from "@prisma/client";
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
         amount: data.amount ?? null,
         currency: data.currency,
         preparedById: user.id,
-        validUntil: data.validUntil ? requireUserDateTime(data.validUntil, "validUntil") : null,
+        validUntil: data.validUntil ? requireFutureDateTime(data.validUntil, "validUntil") : null,
         // A revision inherits the count from the version it supersedes, so
         // "how many times did we rework this deal" survives versioning.
         revisionCount: data.isRevision ? (latest?.revisionCount ?? 0) + 1 : 0,
@@ -91,9 +92,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Drafting a proposal advances the pipeline on its own.
+    // Drafting a proposal advances the pipeline on its own. Membership test, so
+    // it is unaffected by the Discovery / Meeting Scheduled reordering.
     if (["NEW", "CONTACTED", "QUALIFIED", "MEETING_SCHEDULED", "DISCOVERY"].includes(lead.stage)) {
-      await db.lead.update({ where: { id: lead.id }, data: { stage: "PROPOSAL", probability: 60 } });
+      await db.lead.update({
+        where: { id: lead.id },
+        data: { stage: "PROPOSAL", probability: stageProbability("PROPOSAL") },
+      });
       await db.leadStageChange.create({
         data: { leadId: lead.id, fromStage: lead.stage, toStage: "PROPOSAL", actorId: user.id },
       });

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { requireUserDateTime, zonedParts } from "@/lib/timezone";
+import { requireUserDateTime, requireFutureDateTime, zonedParts } from "@/lib/timezone";
 import {
   leadVisibilityFilter, assertCanEditLead, logSalesActivity, SALES_ACTIVITY,
-  notifySales, MEETING_REQUIREMENTS, requireSalesModule,
+  notifySales, MEETING_REQUIREMENTS, requireSalesModule, stageProbability,
 } from "@/lib/sales";
 import { meetingCreateSchema } from "@/lib/sales-schemas";
 import type { MeetingStatus, Prisma } from "@prisma/client";
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
 
     // Wall-clock text resolved against APP_TIMEZONE; never `new Date(string)`,
     // which would adopt the server's zone and shift the meeting on Vercel.
-    const scheduledAt = requireUserDateTime(data.scheduledAt, "scheduledAt");
+    const scheduledAt = requireFutureDateTime(data.scheduledAt, "scheduledAt");
 
     const meeting = await db.salesMeeting.create({
       data: {
@@ -123,8 +123,16 @@ export async function POST(req: NextRequest) {
 
     // Booking a meeting moves an early-stage lead forward on its own — the
     // salesperson should not have to remember to also drag the card.
-    if (lead.stage === "NEW" || lead.stage === "CONTACTED") {
-      await db.lead.update({ where: { id: lead.id }, data: { stage: "MEETING_SCHEDULED" } });
+    //
+    // Every stage that now sits BEFORE Meeting Scheduled qualifies, Discovery
+    // included: since the funnel was reordered so the brief precedes the
+    // meeting, booking one off the back of a completed brief is the normal
+    // path forward rather than a stage the lead is already past.
+    if (["NEW", "CONTACTED", "QUALIFIED", "DISCOVERY"].includes(lead.stage)) {
+      await db.lead.update({
+        where: { id: lead.id },
+        data: { stage: "MEETING_SCHEDULED", probability: stageProbability("MEETING_SCHEDULED") },
+      });
       await db.leadStageChange.create({
         data: { leadId: lead.id, fromStage: lead.stage, toStage: "MEETING_SCHEDULED", actorId: user.id },
       });

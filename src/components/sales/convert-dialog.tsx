@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "./lead-dialog";
+import { todayInputMin, notInThePast } from "@/lib/utils";
 import type { SalesMeta } from "./use-sales-meta";
 
 /**
@@ -51,7 +52,7 @@ export function ConvertDialog({
     deadline: string;
   };
 
-  const { register, handleSubmit, reset } = useForm<FormValues>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>();
 
   React.useEffect(() => {
     if (!open) return;
@@ -136,8 +137,22 @@ export function ConvertDialog({
             <Input type="number" min={0} step="100" {...register("budget")} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Start date"><Input type="date" {...register("startDate")} /></Field>
-            <Field label="Deadline"><Input type="date" {...register("deadline")} /></Field>
+            <Field label="Start date" error={errors.startDate}>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("startDate", { validate: notInThePast("Start date") })}
+                aria-invalid={Boolean(errors.startDate)}
+              />
+            </Field>
+            <Field label="Deadline" error={errors.deadline}>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("deadline", { validate: notInThePast("Deadline") })}
+                aria-invalid={Boolean(errors.deadline)}
+              />
+            </Field>
           </div>
         </div>
 

@@ -400,6 +400,42 @@ export function canAny(user: Pick<SessionUser, "isSuperAdmin" | "permissions">, 
 }
 
 /**
+ * Whether this user may change a task's STATUS.
+ *
+ * Status reports how the work itself is going, so it belongs to the person
+ * doing the work and to nobody else. Managers and administrators — including
+ * the CEO and Operations Manager — can see the status and still edit every
+ * other field, but they cannot move a task through its workflow on someone
+ * else's behalf. Super-admin is deliberately NOT a bypass here; that is the
+ * entire point of the restriction, so `can()` is not consulted for an assigned
+ * task at all.
+ *
+ * "The assigned employee" means either:
+ *  - an ASSIGNEE, who is accountable for the outcome, or
+ *  - the WORKER, the person execution was delegated to.
+ *
+ * The worker is included because delegation moves the doing without moving the
+ * accountability: once an Art Director hands execution to a designer, the
+ * designer is the only one who knows when the work actually started. Excluding
+ * them would leave a delegated task with nobody able to report on it.
+ *
+ * An UNASSIGNED task has no such owner, so it falls back to the ordinary
+ * permission — otherwise a task nobody is on could never be moved or cancelled.
+ *
+ * Lives here rather than in lib/tasks.ts because that module is server-only:
+ * the task drawer needs the same answer to decide whether to render a dropdown
+ * or read-only text, and one definition is what keeps the two in agreement.
+ */
+export function canChangeTaskStatus(
+  user: Pick<SessionUser, "id" | "isSuperAdmin" | "permissions">,
+  task: { assignees: { userId: string }[]; workerId: string | null }
+): boolean {
+  const hasOwner = task.assignees.length > 0 || task.workerId !== null;
+  if (!hasOwner) return can(user, "Task.ChangeStatus") || can(user, "Task.EditDetails");
+  return task.assignees.some((a) => a.userId === user.id) || task.workerId === user.id;
+}
+
+/**
  * Whether `actorRole` may assign a task to someone with `targetRole`, optionally
  * in `targetDepartmentName`.
  *
@@ -491,6 +527,68 @@ export function salesScope(user: SessionUser): SalesScope {
  */
 export function canSeeSalesModule(user: SessionUser) {
   return user.isSuperAdmin || can(user, "Sales.View");
+}
+
+// ─── Client contact confidentiality ──────────────────────────
+
+/**
+ * The confidential fields on a Client.
+ *
+ * Named once here so the API mask, the Prisma select and the UI all agree on
+ * what "contact details" covers. Adding a sensitive column means adding it to
+ * this list and nothing else.
+ */
+export const CLIENT_CONTACT_FIELDS = ["email", "phone", "whatsapp", "address"] as const;
+
+export type ClientContactField = (typeof CLIENT_CONTACT_FIELDS)[number];
+
+/**
+ * Whether `viewer` may see a client's contact details.
+ *
+ * Deliberately narrower than Client.View: everyone who can see the client list
+ * can see that a client EXISTS, its company, industry, status and the work
+ * attached to it. Only three parties get the phone number, email, WhatsApp and
+ * address:
+ *
+ *  - the CEO and the Operations Manager (the super admins), and
+ *  - the account manager assigned to THAT client, not account managers at large.
+ *
+ * The last point is why this takes the client rather than just the user: holding
+ * the ACCOUNT_MANAGER role is not sufficient, the row's accountManagerId has to
+ * point at the viewer. A client with no account manager assigned is therefore
+ * visible to the super admins only, which is the safe default.
+ */
+export function canViewClientContact(
+  viewer: Pick<SessionUser, "id" | "isSuperAdmin" | "permissions">,
+  client: { accountManagerId: string | null }
+): boolean {
+  if (viewer.isSuperAdmin) return true;
+  return client.accountManagerId !== null && client.accountManagerId === viewer.id;
+}
+
+/**
+ * Strip the confidential fields from a client unless the viewer is entitled.
+ *
+ * Returns the row with each restricted field replaced by null, plus a
+ * `contactVisible` flag so the UI can render "Restricted" rather than an
+ * ambiguous empty value — a masked phone number and an absent one look
+ * identical otherwise.
+ *
+ * Applied in the API layer, so an unauthorised caller never receives the data
+ * in the first place; hiding it only in the client would ship the secrets to
+ * the browser and hide them with CSS.
+ */
+export function maskClientContact<T extends { accountManagerId: string | null }>(
+  viewer: Pick<SessionUser, "id" | "isSuperAdmin" | "permissions">,
+  client: T
+): T & { contactVisible: boolean } {
+  const visible = canViewClientContact(viewer, client);
+  if (visible) return { ...client, contactVisible: true };
+  const masked = { ...client, contactVisible: false };
+  for (const field of CLIENT_CONTACT_FIELDS) {
+    if (field in masked) (masked as Record<string, unknown>)[field] = null;
+  }
+  return masked;
 }
 
 /** Whether `viewer` may read `employeeId`'s job description. */

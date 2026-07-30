@@ -33,10 +33,19 @@ export function TaskBoard({
   scope,
   fixedProjectId,
   title,
+  /**
+   * Let the parent own the detail panel instead of rendering our own.
+   *
+   * Two boards on one page (see TasksWorkspace) both read `?task=` and would
+   * each mount a TaskDetail portal, stacking two identical drawers. The page
+   * hoists a single panel and opts both boards out.
+   */
+  renderDetail = true,
 }: {
   scope?: "mine" | "all";
   fixedProjectId?: string;
   title?: string;
+  renderDetail?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -155,7 +164,7 @@ export function TaskBoard({
         )}
       </div>
 
-      <TaskDetail taskId={openTaskId} onClose={() => setOpenTask(null)} />
+      {renderDetail && <TaskDetail taskId={openTaskId} onClose={() => setOpenTask(null)} />}
       <CreateTaskDialog open={createOpen} onClose={() => setCreateOpen(false)} defaultProjectId={fixedProjectId} />
     </div>
   );

@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { formatDate } from "@/lib/utils";
+import { formatDate, todayInputMin, notInThePast } from "@/lib/utils";
 import { useCan } from "@/components/session-context";
 
 const PROJECT_STATUS: Record<string, string> = {
@@ -151,8 +151,28 @@ export function ProjectsClient() {
             <div className="space-y-1.5"><Label>Industry</Label><Input {...register("industry")} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Start date</Label><Input type="date" {...register("startDate")} /></div>
-            <div className="space-y-1.5"><Label>Deadline</Label><Input type="date" {...register("deadline")} /></div>
+            <div className="space-y-1.5">
+              <Label>Start date</Label>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("startDate", { validate: notInThePast("Start date") })}
+              />
+              {errors.startDate && (
+                <p className="text-xs text-destructive">{String(errors.startDate.message)}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Deadline</Label>
+              <Input
+                type="date"
+                min={todayInputMin()}
+                {...register("deadline", { validate: notInThePast("Deadline") })}
+              />
+              {errors.deadline && (
+                <p className="text-xs text-destructive">{String(errors.deadline.message)}</p>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

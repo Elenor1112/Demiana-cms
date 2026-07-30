@@ -95,8 +95,10 @@ const requiredWallClock = (label: string) =>
     .string({ required_error: `${label} is required` })
     .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/, `${label} is required`);
 
+// Set membership for validation, so order carries no meaning here — listed in
+// lifecycle order anyway so it reads the same as the pipeline.
 export const LEAD_STAGES = [
-  "NEW", "CONTACTED", "QUALIFIED", "MEETING_SCHEDULED", "DISCOVERY",
+  "NEW", "CONTACTED", "QUALIFIED", "DISCOVERY", "MEETING_SCHEDULED",
   "PROPOSAL", "NEGOTIATION", "WON", "LOST", "DORMANT",
 ] as const;
 
@@ -143,6 +145,10 @@ export const leadCreateSchema = z.object({
   contactPerson: requiredText("Contact person"),
   jobTitle: requiredText("Job title"),
   phone: requiredText("Phone number"),
+  // Optional, unlike phone: not every prospect is reachable on WhatsApp, and an
+  // "N/A" placeholder in a dialable field is worse than an empty one. Carried
+  // over to Client.whatsapp when the deal is won.
+  whatsapp: optionalText,
   email: requiredEmail,
   website: requiredText("Website"),
   industry: requiredText("Industry"),

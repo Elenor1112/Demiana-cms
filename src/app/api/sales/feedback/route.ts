@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { requireUserDateTime } from "@/lib/timezone";
+import { requireUserDateTime, requireFutureDateTime } from "@/lib/timezone";
 import {
   leadVisibilityFilter, assertCanEditLead, scoreOpportunity, logSalesActivity,
   SALES_ACTIVITY, notifySales, requireSalesModule,
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         servicesRecommended: data.servicesRecommended,
         nextAction: data.nextAction,
         nextMeetingDate: data.nextMeetingDate
-          ? requireUserDateTime(data.nextMeetingDate, "nextMeetingDate") : null,
+          ? requireFutureDateTime(data.nextMeetingDate, "nextMeetingDate") : null,
         internalNotes: data.internalNotes,
       },
       include: { author: userPick, meeting: { select: { id: true, title: true } } },

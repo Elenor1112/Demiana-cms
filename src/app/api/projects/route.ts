@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { parseUserDateTime } from "@/lib/timezone";
+import { requireFutureDateTime } from "@/lib/timezone";
 
 export async function GET() {
   try {
@@ -66,8 +66,9 @@ export async function POST(req: NextRequest) {
         clientId: data.clientId,
         industry: data.industry,
         leadId: data.leadId || user.id,
-        startDate: data.startDate ? parseUserDateTime(data.startDate) : null,
-        deadline: data.deadline ? parseUserDateTime(data.deadline) : null,
+        // Scheduling fields on a NEW project: a past date is rejected outright.
+        startDate: data.startDate ? requireFutureDateTime(data.startDate, "startDate") : null,
+        deadline: data.deadline ? requireFutureDateTime(data.deadline, "deadline") : null,
         status: "ACTIVE",
         members: { create: data.memberIds.map((userId) => ({ userId })) },
       },

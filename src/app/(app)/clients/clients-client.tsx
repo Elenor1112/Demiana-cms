@@ -4,7 +4,10 @@ import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Plus, Building2, Mail, Phone, Search, Loader2, Pencil, Trash2 } from "lucide-react";
+import {
+  Plus, Building2, Mail, Phone, Search, Loader2, Pencil, Trash2,
+  Lock, MessageCircle, MapPin,
+} from "lucide-react";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,9 +75,23 @@ export function ClientsClient() {
                 <h3 className="mt-3 font-semibold">{c.company}</h3>
                 <p className="text-xs text-muted-foreground">{c.industry ?? "—"}</p>
                 {c.contactPerson && <p className="mt-2 text-sm">{c.contactPerson}</p>}
+                {/* Contact details come back masked for anyone who is not the
+                    CEO, the Operations Manager or this client's account
+                    manager. "Restricted" is shown rather than nothing, so a
+                    withheld number is distinguishable from an absent one. */}
                 <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                  {c.email && <div className="flex items-center gap-1.5"><Mail className="size-3" /> {c.email}</div>}
-                  {c.phone && <div className="flex items-center gap-1.5"><Phone className="size-3" /> {c.phone}</div>}
+                  {c.contactVisible === false ? (
+                    <div className="flex items-center gap-1.5">
+                      <Lock className="size-3" /> Contact details restricted
+                    </div>
+                  ) : (
+                    <>
+                      {c.email && <div className="flex items-center gap-1.5"><Mail className="size-3" /> {c.email}</div>}
+                      {c.phone && <div className="flex items-center gap-1.5"><Phone className="size-3" /> {c.phone}</div>}
+                      {c.whatsapp && <div className="flex items-center gap-1.5"><MessageCircle className="size-3" /> {c.whatsapp}</div>}
+                      {c.address && <div className="flex items-center gap-1.5"><MapPin className="size-3" /> {c.address}</div>}
+                    </>
+                  )}
                 </div>
                 <div className="mt-3 flex items-center gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
                   <span>{c._count.projects} projects</span>
@@ -117,6 +134,10 @@ export function ClientsClient() {
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" {...register("email")} /></div>
             <div className="space-y-1.5"><Label>Phone</Label><Input {...register("phone")} /></div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>WhatsApp</Label><Input {...register("whatsapp")} /></div>
+            <div className="space-y-1.5"><Label>Address</Label><Input {...register("address")} /></div>
+          </div>
           <div className="space-y-1.5"><Label>Status</Label>
             <Select {...register("status")} defaultValue="ACTIVE">
               {Object.keys(STATUS).map((s) => <option key={s} value={s}>{s}</option>)}
@@ -151,21 +172,35 @@ export function ClientsClient() {
   );
 }
 
-const CLIENT_FIELDS = ["company", "contactPerson", "email", "phone", "industry", "status", "notes"] as const;
+/** Fields anyone with Client.Edit may change. */
+const CLIENT_FIELDS = ["company", "contactPerson", "industry", "status", "notes"] as const;
+
+/**
+ * Confidential fields, sent ONLY when this viewer is entitled to them.
+ *
+ * The distinction matters: the API returns these as null for an unauthorised
+ * viewer, so including them unconditionally would post those nulls straight
+ * back and wipe the real values — an edit to the company name would silently
+ * erase the phone number. The API rejects the attempt either way; this keeps
+ * the form from making it.
+ */
+const CLIENT_CONTACT_FIELDS = ["email", "phone", "whatsapp", "address"] as const;
 
 function EditClientDialog({ client, onClose }: { client: any; onClose: () => void }) {
   const qc = useQueryClient();
   const { register, handleSubmit } = useForm<any>({ defaultValues: client });
+  const canSeeContact = client.contactVisible !== false;
 
   const save = useMutation({
     // Send only editable fields — the row carries _count and relations that the
     // PATCH schema would reject.
     mutationFn: (v: any) =>
-      apiSend(
-        `/api/clients/${client.id}`,
-        "PATCH",
-        Object.fromEntries(CLIENT_FIELDS.map((k) => [k, v[k] ?? null]))
-      ),
+      apiSend(`/api/clients/${client.id}`, "PATCH", {
+        ...Object.fromEntries(CLIENT_FIELDS.map((k) => [k, v[k] ?? null])),
+        ...(canSeeContact
+          ? Object.fromEntries(CLIENT_CONTACT_FIELDS.map((k) => [k, v[k] ?? null]))
+          : {}),
+      }),
     onSuccess: () => {
       toast.success("Client updated");
       qc.invalidateQueries({ queryKey: ["clients"] });
@@ -182,10 +217,26 @@ function EditClientDialog({ client, onClose }: { client: any; onClose: () => voi
           <div className="space-y-1.5"><Label>Contact person</Label><Input {...register("contactPerson")} /></div>
           <div className="space-y-1.5"><Label>Industry</Label><Input {...register("industry")} /></div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5"><Label>Email</Label><Input type="email" {...register("email")} /></div>
-          <div className="space-y-1.5"><Label>Phone</Label><Input {...register("phone")} /></div>
-        </div>
+        {canSeeContact ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Email</Label><Input type="email" {...register("email")} /></div>
+              <div className="space-y-1.5"><Label>Phone</Label><Input {...register("phone")} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>WhatsApp</Label><Input {...register("whatsapp")} /></div>
+              <div className="space-y-1.5"><Label>Address</Label><Input {...register("address")} /></div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-lg border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Lock className="size-3.5 shrink-0" />
+              Contact details are restricted to the CEO, the Operations Manager and this
+              client&apos;s account manager.
+            </span>
+          </div>
+        )}
         <div className="space-y-1.5"><Label>Status</Label>
           <Select {...register("status")}>
             {Object.keys(STATUS).map((s) => <option key={s} value={s}>{s}</option>)}

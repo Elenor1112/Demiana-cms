@@ -7,7 +7,7 @@ import {
   parseDeadline, formatDeadlineText, lifecycleStamps,
   workerAuthorization, isAssignableBy, recordWorkerChange, resolveTaskClientId,
 } from "@/lib/tasks";
-import { can } from "@/lib/rbac";
+import { can, canChangeTaskStatus } from "@/lib/rbac";
 import { notifyMany } from "@/lib/notify";
 import type { TaskStatus } from "@prisma/client";
 
@@ -109,6 +109,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
 
+    // Status belongs to the person doing the work. Everyone else — managers,
+    // administrators, the CEO — may read it but never set it, which is why this
+    // check has no super-admin bypass. Enforced here rather than only in the UI
+    // so a direct API call cannot get around it.
+    const changingStatus = data.status !== undefined && data.status !== before.status;
+    if (changingStatus && !canChangeTaskStatus(user, before)) {
+      throw new ApiError(
+        403,
+        "Only the employee assigned to this task can change its status."
+      );
+    }
+
     // `workerId` is deliberately NOT a privileged field: delegating execution is
     // exactly what an Art Director without Task.EditDetails must be able to do.
     // It carries its own permission check instead.
@@ -147,6 +159,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // A deadline may not be moved into the past. Parsed once here and reused
+    // below so the rule is applied in exactly one place.
+    //
+    // An UNCHANGED deadline is allowed through even when it is already past:
+    // editing the title of a task that ran over last week must not be blocked
+    // by a date the user is not touching. Only an actual move is validated,
+    // which is what keeps existing historical records editable.
+    let nextDeadline: Date | null | undefined;
+    if (data.deadline === null) {
+      nextDeadline = null;
+    } else if (data.deadline !== undefined) {
+      const unchanged = parseDeadline(data.deadline, { allowPast: true });
+      nextDeadline =
+        unchanged.getTime() === before.deadline?.getTime()
+          ? unchanged
+          : parseDeadline(data.deadline);
+    }
+
     // progress auto-set on status change unless explicitly provided
     let progress = data.progress;
     if (data.status && data.status !== before.status && progress === undefined) {
@@ -183,7 +213,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: data.status,
         priority: data.priority,
         progress,
-        deadline: data.deadline ? parseDeadline(data.deadline) : data.deadline === null ? null : undefined,
+        deadline: nextDeadline,
         estimatedHours: data.estimatedHours,
         actualHours: data.actualHours,
         projectId: data.projectId === undefined ? undefined : data.projectId || null,
@@ -269,7 +299,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // activity log for deadline changes
     if (data.deadline !== undefined) {
-      const nextDeadline = data.deadline ? parseDeadline(data.deadline) : null;
       if (nextDeadline?.getTime() !== before.deadline?.getTime()) {
         await logActivity({
           actorId: user.id,

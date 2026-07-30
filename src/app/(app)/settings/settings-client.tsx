@@ -16,6 +16,7 @@ import { useSession } from "@/components/session-context";
 import { useTheme } from "@/components/theme-provider";
 import { PushSettingsCard } from "@/components/shell/push-settings";
 import { ROLE_META } from "@/lib/rbac";
+import { todayInputMin } from "@/lib/utils";
 
 export function SettingsClient() {
   const me = useSession();
@@ -210,7 +211,15 @@ function ResignDialog({ open, onClose }: { open: boolean; onClose: () => void })
     <Dialog open={open} onClose={onClose} title="Submit resignation" description="This begins the formal offboarding process.">
       <div className="space-y-4">
         <div className="space-y-1.5"><Label>Reason</Label><Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for resignation…" /></div>
-        <div className="space-y-1.5"><Label>Last working day</Label><Input type="date" value={lastDay} onChange={(e) => setLastDay(e.target.value)} /></div>
+        <div className="space-y-1.5">
+          <Label>Last working day</Label>
+          <Input
+            type="date"
+            min={todayInputMin()}
+            value={lastDay}
+            onChange={(e) => setLastDay(e.target.value)}
+          />
+        </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button className="bg-destructive hover:bg-destructive/90" onClick={() => submit.mutate()} disabled={!reason || !lastDay || submit.isPending}>

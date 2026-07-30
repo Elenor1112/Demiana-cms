@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
 import {
-  leadVisibilityFilter, assertCanEditLead, logSalesActivity, SALES_ACTIVITY, notifySales, requireSalesModule,
+  leadVisibilityFilter, assertCanEditLead, logSalesActivity, SALES_ACTIVITY, notifySales,
+  requireSalesModule, stageProbability,
 } from "@/lib/sales";
 import { briefSchema } from "@/lib/sales-schemas";
 import type { Prisma } from "@prisma/client";
@@ -136,8 +137,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // Submitting for the first time is what moves the lead into DISCOVERY.
     const firstSubmission = submitting && existing?.status !== "SUBMITTED";
     if (firstSubmission) {
-      if (["NEW", "CONTACTED", "QUALIFIED", "MEETING_SCHEDULED"].includes(lead.stage)) {
-        await db.lead.update({ where: { id }, data: { stage: "DISCOVERY", probability: 45 } });
+      // Only stages that sit BEFORE Discovery advance. MEETING_SCHEDULED is no
+      // longer among them: Discovery now precedes it, so pulling a lead with a
+      // booked meeting back into Discovery would move it backwards through the
+      // funnel and drop its forecast.
+      if (["NEW", "CONTACTED", "QUALIFIED"].includes(lead.stage)) {
+        await db.lead.update({
+          where: { id },
+          // Probability comes from the stage table rather than a literal, so it
+          // cannot drift from STAGE_PROBABILITY when the funnel is reordered.
+          data: { stage: "DISCOVERY", probability: stageProbability("DISCOVERY") },
+        });
         await db.leadStageChange.create({
           data: { leadId: id, fromStage: lead.stage, toStage: "DISCOVERY", actorId: user.id, changedAt: now },
         });

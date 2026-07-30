@@ -140,6 +140,79 @@ export function requireUserDateTime(
 export class InvalidDateError extends Error {}
 
 /**
+ * "yyyy-MM-dd" for today as seen in APP_TIMEZONE.
+ *
+ * The `min` attribute for every scheduling date input, and the boundary the
+ * server validates against. Derived from the company zone rather than the
+ * runtime's: on a UTC host, "today" flips at 22:00 Cairo time, which would
+ * start rejecting the rest of the working day as "in the past".
+ */
+export function companyToday(timeZone: string = APP_TIMEZONE): string {
+  const p = zonedParts(new Date(), timeZone);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
+}
+
+/**
+ * Whether a wall-clock input falls before today in the company's zone.
+ *
+ * Compared at DAY granularity on purpose: a deadline of "today at 09:00" set at
+ * 11:00 is a normal same-day entry, not a past date. Only a date whose calendar
+ * day is already over counts as past.
+ */
+export function isPastDate(input: string, timeZone: string = APP_TIMEZONE): boolean {
+  const instant = parseUserDateTime(input, timeZone);
+  if (!instant) return false; // unparseable is a separate error, handled by the parser
+  const p = zonedParts(instant, timeZone);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}` < companyToday(timeZone);
+}
+
+/**
+ * Parse a scheduling field, rejecting dates already in the past.
+ *
+ * Used by every create/edit path that sets a future-facing date — deadlines,
+ * start dates, meeting times, follow-ups. Historical records are untouched:
+ * this only runs on values a user just submitted, and routes skip the check
+ * when the incoming value is unchanged from what is already stored.
+ */
+export function requireFutureDateTime(
+  input: string,
+  field = "date",
+  timeZone: string = APP_TIMEZONE
+): Date {
+  const d = requireUserDateTime(input, field, timeZone);
+  if (isPastDate(input, timeZone)) {
+    throw new InvalidDateError(`${field}: cannot be in the past. Choose today or a later date.`);
+  }
+  return d;
+}
+
+/**
+ * Parse an EDITED scheduling field: reject a past date, unless it is the value
+ * already stored.
+ *
+ * This is what makes "existing historical records remain unchanged" true. Edit
+ * forms round-trip every field, so a form that merely changes a lead's phone
+ * number resubmits its close date too. Without this exemption, any record whose
+ * date has since lapsed would become permanently uneditable — the guard would
+ * fire on a field the user never touched.
+ *
+ * Only an actual MOVE is validated: pick a new date and it must be today or
+ * later; leave it alone and it passes through untouched.
+ */
+export function keepOrRequireFuture(
+  input: string,
+  current: Date | null | undefined,
+  field = "date",
+  timeZone: string = APP_TIMEZONE
+): Date {
+  const parsed = requireUserDateTime(input, field, timeZone);
+  if (current && parsed.getTime() === current.getTime()) return parsed;
+  return requireFutureDateTime(input, field, timeZone);
+}
+
+/**
  * True when `instant` falls at midnight in APP_TIMEZONE — i.e. it was entered
  * as a date with no time. Replaces the old `getHours() === 0` checks, which
  * asked the *runtime's* zone and so gave different answers per environment.

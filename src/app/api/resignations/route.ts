@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse } from "@/lib/api";
-import { requireUserDateTime } from "@/lib/timezone";
+import { requireFutureDateTime } from "@/lib/timezone";
 import { buildApprovalChain, createApprovalSteps } from "@/lib/approvals";
 
 const OFFBOARDING_TEMPLATE = [
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
         department: dbUser?.department?.name,
         jobTitle: dbUser?.jobTitle ?? dbUser?.role.name,
         reason: data.reason,
-        lastWorkingDay: requireUserDateTime(data.lastWorkingDay, "lastWorkingDay"),
+        lastWorkingDay: requireFutureDateTime(data.lastWorkingDay, "lastWorkingDay"),
         status: "PENDING",
         checklist: { create: OFFBOARDING_TEMPLATE },
       },

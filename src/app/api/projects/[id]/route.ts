@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, requirePermission, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { parseUserDateTime } from "@/lib/timezone";
+import { requireUserDateTime, requireFutureDateTime } from "@/lib/timezone";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -56,9 +56,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const before = await db.project.findUnique({
       where: { id },
-      select: { id: true, name: true, clientId: true, _count: { select: { tasks: true } } },
+      select: { id: true, name: true, clientId: true, deadline: true, _count: { select: { tasks: true } } },
     });
     if (!before) throw new ApiError(404, "Project not found");
+
+    // A deadline may not be moved into the past, but re-submitting the one
+    // already stored is allowed — otherwise a project that overran could never
+    // have its status or members edited again.
+    let nextDeadline: Date | null | undefined;
+    if (data.deadline === null) {
+      nextDeadline = null;
+    } else if (data.deadline !== undefined) {
+      const parsed = requireUserDateTime(data.deadline, "deadline");
+      nextDeadline =
+        parsed.getTime() === before.deadline?.getTime()
+          ? parsed
+          : requireFutureDateTime(data.deadline, "deadline");
+    }
 
     // Reparenting to another client moves the project's whole body of work with
     // it — every task under it inherits the new client (enforced by the
@@ -81,7 +95,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: data.status,
         clientId: data.clientId,
         leadId: data.leadId === undefined ? undefined : data.leadId || null,
-        deadline: data.deadline ? parseUserDateTime(data.deadline) : data.deadline === null ? null : undefined,
+        deadline: nextDeadline,
       },
     });
 

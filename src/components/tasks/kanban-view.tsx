@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { apiSend } from "@/lib/fetcher";
 import { TASK_STATUS_META, TASK_STATUS_ORDER } from "@/lib/constants";
 import { TaskCard, type TaskListItem } from "./task-bits";
+import { useSession } from "@/components/session-context";
+import { canChangeTaskStatus } from "@/lib/rbac";
 import type { TaskStatus } from "@prisma/client";
 
 export function KanbanView({
@@ -18,8 +20,22 @@ export function KanbanView({
   queryKey: unknown[];
 }) {
   const qc = useQueryClient();
+  const me = useSession();
   const [dragId, setDragId] = React.useState<string | null>(null);
   const [overCol, setOverCol] = React.useState<TaskStatus | null>(null);
+
+  // Dragging a card IS a status change, so it obeys the same rule as the
+  // dropdown in the detail drawer: only the assigned employee may move it. Cards
+  // the user cannot move are rendered undraggable rather than snapping back
+  // after a 403.
+  const canMove = React.useCallback(
+    (task: TaskListItem) =>
+      canChangeTaskStatus(me, {
+        assignees: task.assignees.map((a) => ({ userId: a.user.id })),
+        workerId: task.worker?.id ?? null,
+      }),
+    [me]
+  );
 
   const move = useMutation({
     mutationFn: ({ id, status }: { id: string; status: TaskStatus }) =>
@@ -42,7 +58,9 @@ export function KanbanView({
   function onDrop(status: TaskStatus) {
     if (dragId) {
       const task = tasks.find((t) => t.id === dragId);
-      if (task && task.status !== status) move.mutate({ id: dragId, status });
+      if (task && task.status !== status && canMove(task)) {
+        move.mutate({ id: dragId, status });
+      }
     }
     setDragId(null);
     setOverCol(null);
@@ -71,18 +89,22 @@ export function KanbanView({
               </div>
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-2" style={{ minHeight: 120 }}>
-              {colTasks.map((task) => (
-                <motion.div
-                  key={task.id}
-                  layout
-                  draggable
-                  onDragStart={() => setDragId(task.id)}
-                  onDragEnd={() => setDragId(null)}
-                  className={dragId === task.id ? "opacity-40" : ""}
-                >
-                  <TaskCard task={task} onClick={() => onOpen(task.id)} />
-                </motion.div>
-              ))}
+              {colTasks.map((task) => {
+                const movable = canMove(task);
+                return (
+                  <motion.div
+                    key={task.id}
+                    layout
+                    draggable={movable}
+                    onDragStart={() => movable && setDragId(task.id)}
+                    onDragEnd={() => setDragId(null)}
+                    title={movable ? undefined : "Only the assigned employee can change this task's status"}
+                    className={dragId === task.id ? "opacity-40" : ""}
+                  >
+                    <TaskCard task={task} onClick={() => onOpen(task.id)} />
+                  </motion.div>
+                );
+              })}
               {colTasks.length === 0 && (
                 <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">
                   Drop here

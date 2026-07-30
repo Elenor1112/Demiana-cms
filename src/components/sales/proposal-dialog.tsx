@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "./lead-dialog";
+import { todayInputMin, notInThePast } from "@/lib/utils";
 import { toLocalInputValue } from "./sales-bits";
 
 /**
@@ -47,7 +48,7 @@ export function ProposalDialog({
     validUntil: string;
   };
 
-  const { register, handleSubmit, reset } = useForm<FormValues>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>();
 
   React.useEffect(() => {
     if (!open) return;
@@ -122,8 +123,13 @@ export function ProposalDialog({
             <Input {...register("currency")} maxLength={8} />
           </Field>
         </div>
-        <Field label="Valid until">
-          <Input type="date" {...register("validUntil")} />
+        <Field label="Valid until" error={errors.validUntil}>
+          <Input
+            type="date"
+            min={todayInputMin()}
+            {...register("validUntil", { validate: notInThePast("Valid until") })}
+            aria-invalid={Boolean(errors.validUntil)}
+          />
         </Field>
 
         <div className="flex justify-end gap-2 border-t border-border pt-4">

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { APP_TIMEZONE, zonedParts, toZonedInputValue } from "./timezone";
+import { APP_TIMEZONE, zonedParts, toZonedInputValue, companyToday, isPastDate } from "./timezone";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -141,6 +141,38 @@ export function businessDaysBetween(start: Date, end: Date) {
     cur.setDate(cur.getDate() + 1);
   }
   return count;
+}
+
+/**
+ * The `min` attribute for any scheduling date / datetime input.
+ *
+ * Every deadline, start date, meeting time and follow-up uses this, so a past
+ * day is not offered by the browser's own picker in the first place. It is a
+ * convenience, NOT the enforcement: `min` is trivially bypassed by typing, so
+ * the server independently rejects past dates via requireFutureDateTime().
+ *
+ * Anchored to the company's today rather than the device's, matching the zone
+ * the value will be interpreted in when it reaches the server.
+ */
+export const todayInputMin = () => companyToday();
+
+/** Same boundary for <input type="datetime-local">: today at 00:00. */
+export const todayDateTimeMin = () => `${companyToday()}T00:00`;
+
+/**
+ * react-hook-form validator for a future-facing date field.
+ *
+ * Returns the error string RHF expects, or true when the value is acceptable.
+ * Empty passes — "required" is a separate concern each field declares itself.
+ *
+ * Mirrors the server's rule exactly (day granularity, company zone), so a value
+ * the form accepts is never rejected by the API and vice versa.
+ */
+export function notInThePast(label = "Date") {
+  return (value?: string | null) => {
+    if (!value) return true;
+    return isPastDate(value) ? `${label} cannot be in the past.` : true;
+  };
 }
 
 // Avatar background from a string (deterministic)

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus, Loader2, Send, CheckCircle2, XCircle, MailOpen, Download, ExternalLink,
-  MessageCircle, ClipboardList, ArrowRight,
+  MessageCircle, ClipboardList, ArrowRight, Trash2,
 } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/fetcher";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { useCan } from "@/components/session-context";
 import { useSession } from "@/components/session-context";
 import {
@@ -345,6 +346,18 @@ export function MeetingsTab({ lead, readOnly }: { lead: LeadDetail; readOnly?: b
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<LeadMeeting | null>(null);
+  const [deleting, setDeleting] = React.useState<LeadMeeting | null>(null);
+
+  const remove = useMutation({
+    mutationFn: (meetingId: string) => apiSend(`/api/sales/meetings/${meetingId}`, "DELETE"),
+    onSuccess: () => {
+      toast.success("Meeting deleted");
+      qc.invalidateQueries({ queryKey: LEAD_KEY(lead.id) });
+      qc.invalidateQueries({ queryKey: ["sales-meetings"] });
+      setDeleting(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const toggleRequirement = useMutation({
     mutationFn: ({ meetingId, key, done }: { meetingId: string; key: string; done: boolean }) =>
@@ -431,6 +444,15 @@ export function MeetingsTab({ lead, readOnly }: { lead: LeadDetail; readOnly?: b
                       Mark completed
                     </Button>
                   )}
+                  {editable && (
+                    <button
+                      onClick={() => setDeleting(m)}
+                      aria-label={`Delete ${m.title}`}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -505,6 +527,15 @@ export function MeetingsTab({ lead, readOnly }: { lead: LeadDetail; readOnly?: b
         onClose={() => { setOpen(false); setEditing(null); }}
         leadId={lead.id}
         meeting={editing}
+      />
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        title={`Delete ${deleting?.title ?? "meeting"}?`}
+        description="This removes the meeting and its preparation checklist. Any submitted feedback stays on the lead."
+        pending={remove.isPending}
       />
     </div>
   );

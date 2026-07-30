@@ -3,7 +3,9 @@ import { db } from "./db";
 import {
   can, canAssignTo, ASSIGNMENT_MATRIX, ASSIGNABLE_DEPARTMENTS, type SessionUser,
 } from "./rbac";
-import { requireUserDateTime, isDateOnly, zonedParts, APP_TIMEZONE } from "./timezone";
+import {
+  requireUserDateTime, requireFutureDateTime, isDateOnly, zonedParts, APP_TIMEZONE,
+} from "./timezone";
 // api.ts does not import this module, so there is no cycle.
 import { ApiError } from "./api";
 import type { Prisma, TaskStatus } from "@prisma/client";
@@ -62,9 +64,16 @@ export async function canViewTask(user: SessionUser, taskId: string) {
  * is why the bug only ever appeared in production.
  *
  * Throws on unparseable input rather than silently storing an Invalid Date.
+ *
+ * A deadline is a scheduling field, so a date already past is rejected. Pass
+ * `{ allowPast: true }` when re-parsing a value purely to compare it against
+ * what is already stored — see the PATCH route, which must be able to read an
+ * old deadline back without the guard firing on a record it is not changing.
  */
-export function parseDeadline(input: string): Date {
-  return requireUserDateTime(input, "deadline");
+export function parseDeadline(input: string, opts: { allowPast?: boolean } = {}): Date {
+  return opts.allowPast
+    ? requireUserDateTime(input, "deadline")
+    : requireFutureDateTime(input, "deadline");
 }
 
 /**

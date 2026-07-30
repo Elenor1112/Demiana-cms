@@ -17,7 +17,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { REQUEST_STATUS_META, LEAVE_TYPE_META } from "@/lib/constants";
-import { formatDate } from "@/lib/utils";
+import { formatDate, todayInputMin, notInThePast } from "@/lib/utils";
 import { useSession } from "@/components/session-context";
 
 type Leave = {
@@ -131,7 +131,7 @@ function Empty() {
 
 function LeaveForm({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
-  const { register, handleSubmit, reset } = useForm<any>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<any>();
   const [warnings, setWarnings] = React.useState<string[]>([]);
 
   const { data: emps } = useQuery({
@@ -168,8 +168,28 @@ function LeaveForm({ open, onClose }: { open: boolean; onClose: () => void }) {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5"><Label>Start date</Label><Input type="date" {...register("startDate", { required: true })} /></div>
-          <div className="space-y-1.5"><Label>End date</Label><Input type="date" {...register("endDate", { required: true })} /></div>
+          <div className="space-y-1.5">
+            <Label>Start date</Label>
+            <Input
+              type="date"
+              min={todayInputMin()}
+              {...register("startDate", { required: true, validate: notInThePast("Start date") })}
+            />
+            {errors.startDate?.message && (
+              <p className="text-xs text-destructive">{String(errors.startDate.message)}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label>End date</Label>
+            <Input
+              type="date"
+              min={todayInputMin()}
+              {...register("endDate", { required: true, validate: notInThePast("End date") })}
+            />
+            {errors.endDate?.message && (
+              <p className="text-xs text-destructive">{String(errors.endDate.message)}</p>
+            )}
+          </div>
         </div>
         <div className="space-y-1.5"><Label>Reason</Label><Textarea {...register("reason", { required: true })} placeholder="Reason for leave…" /></div>
         <div className="space-y-1.5"><Label>Work handover</Label><Textarea {...register("handover", { required: true })} placeholder="How will your work be covered?" /></div>

@@ -2,10 +2,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Plus, Search, ExternalLink, MapPin, Clock } from "lucide-react";
-import { apiGet } from "@/lib/fetcher";
+import { toast } from "sonner";
+import { Plus, Search, ExternalLink, MapPin, Clock, Trash2 } from "lucide-react";
+import { apiGet, apiSend } from "@/lib/fetcher";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -39,6 +41,7 @@ export function MeetingsClient() {
   const router = useRouter();
   const params = useSearchParams();
   const can = useCan();
+  const qc = useQueryClient();
   const { data: meta } = useSalesMeta();
 
   const [q, setQ] = React.useState("");
@@ -46,6 +49,7 @@ export function MeetingsClient() {
   const [status, setStatus] = React.useState("");
   const [open, setOpen] = React.useState(params.get("new") === "1");
   const [editing, setEditing] = React.useState<MeetingRow | null>(null);
+  const [deleting, setDeleting] = React.useState<MeetingRow | null>(null);
 
   const [debouncedQ, setDebouncedQ] = React.useState("");
   React.useEffect(() => {
@@ -77,6 +81,18 @@ export function MeetingsClient() {
 
   const meetings = data?.meetings ?? [];
   const editable = can("Sales.MeetingManage");
+
+  const remove = useMutation({
+    mutationFn: (id: string) => apiSend<{ message?: string }>(`/api/sales/meetings/${id}`, "DELETE"),
+    onSuccess: (res) => {
+      toast.success(res?.message ?? "Meeting deleted");
+      qc.invalidateQueries({ queryKey: ["sales-meetings"] });
+      qc.invalidateQueries({ queryKey: ["sales-lead"] });
+      qc.invalidateQueries({ queryKey: ["sales-dashboard"] });
+      setDeleting(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <div>
@@ -206,13 +222,22 @@ export function MeetingsClient() {
                       {formatRelative(m.scheduledAt)}
                     </span>
                     {editable && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => { setEditing(m); setOpen(true); }}
-                      >
-                        Edit
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => { setEditing(m); setOpen(true); }}
+                        >
+                          Edit
+                        </Button>
+                        <button
+                          onClick={() => setDeleting(m)}
+                          aria-label={`Delete ${m.title}`}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </Card>
@@ -232,6 +257,19 @@ export function MeetingsClient() {
         }}
         meeting={editing}
         leadPickerLeads={meta?.leads}
+      />
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        title={`Delete ${deleting?.title ?? "meeting"}?`}
+        description={
+          deleting
+            ? `This removes the meeting from ${deleting.lead.companyName} and cannot be undone. Its preparation checklist goes with it; any submitted feedback stays on the lead.`
+            : ""
+        }
+        pending={remove.isPending}
       />
     </div>
   );

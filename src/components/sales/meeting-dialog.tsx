@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar } from "@/components/ui/avatar";
 import { Field } from "./lead-dialog";
 import { useSalesMeta } from "./use-sales-meta";
+import { todayDateTimeMin, notInThePast } from "@/lib/utils";
 import { toLocalInputValue } from "./sales-bits";
 import {
   MEETING_TYPE_META, MEETING_LOCATION_META, MEETING_STATUS_META,
@@ -59,7 +60,7 @@ export function MeetingDialog({
     status: string;
   };
 
-  const { register, handleSubmit, reset, watch } = useForm<FormValues>();
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<FormValues>();
   const [attendeeIds, setAttendeeIds] = React.useState<string[]>([]);
   const locationType = watch("locationType");
 
@@ -148,8 +149,18 @@ export function MeetingDialog({
               ))}
             </Select>
           </Field>
-          <Field label="Date & time" required>
-            <Input type="datetime-local" {...register("scheduledAt", { required: true })} />
+          {/* A meeting is scheduled, never back-dated: the past-date guard here
+              matches requireFutureDateTime on the API. */}
+          <Field label="Date & time" required error={errors.scheduledAt}>
+            <Input
+              type="datetime-local"
+              min={todayDateTimeMin()}
+              {...register("scheduledAt", {
+                required: true,
+                validate: notInThePast("Meeting date"),
+              })}
+              aria-invalid={Boolean(errors.scheduledAt)}
+            />
           </Field>
           <Field label="Duration (minutes)">
             <Input type="number" min={5} max={600} step={5} {...register("durationMinutes")} />

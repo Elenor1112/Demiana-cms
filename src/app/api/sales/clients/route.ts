@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, toErrorResponse } from "@/lib/api";
-import { salesScope } from "@/lib/rbac";
+import { salesScope, canViewClientContact } from "@/lib/rbac";
 import { leadVisibilityFilter } from "@/lib/sales";
 import type { Prisma } from "@prisma/client";
 
@@ -67,11 +67,26 @@ export async function GET(req: NextRequest) {
       take: 200,
     });
 
+    // A converted lead carries the SAME contact details as the client it became,
+    // so this route has to honour the same restriction — otherwise the sales
+    // clients view would be a way to read a phone number that /api/clients
+    // masks. Entitlement is judged against the client the lead converted into,
+    // which is where the account manager is recorded.
     return NextResponse.json({
-      clients: leads.map((l) => ({
-        ...l,
-        estimatedValue: l.estimatedValue ? Number(l.estimatedValue) : null,
-      })),
+      clients: leads.map((l) => {
+        const entitled =
+          l.convertedClient !== null &&
+          canViewClientContact(user, {
+            accountManagerId: l.convertedClient.accountManager?.id ?? null,
+          });
+        return {
+          ...l,
+          email: entitled ? l.email : null,
+          phone: entitled ? l.phone : null,
+          contactVisible: entitled,
+          estimatedValue: l.estimatedValue ? Number(l.estimatedValue) : null,
+        };
+      }),
       scope: scope.kind,
     });
   } catch (e) {

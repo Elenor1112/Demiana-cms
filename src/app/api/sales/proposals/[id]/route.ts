@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser, audit, toErrorResponse, ApiError } from "@/lib/api";
-import { requireUserDateTime } from "@/lib/timezone";
+import { keepOrRequireFuture } from "@/lib/timezone";
 import {
   leadVisibilityFilter, assertCanEditLead, proposalEventUpdate, logSalesActivity,
-  SALES_ACTIVITY, notifySales, requireSalesModule,
+  SALES_ACTIVITY, notifySales, requireSalesModule, syncWonLeadToClient,
 } from "@/lib/sales";
 import { proposalPatchSchema, proposalEventSchema } from "@/lib/sales-schemas";
 import type { SessionUser } from "@/lib/rbac";
@@ -60,7 +60,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.amount !== undefined) data.amount = body.amount ?? null;
     if (body.validUntil !== undefined) {
-      data.validUntil = body.validUntil ? requireUserDateTime(body.validUntil, "validUntil") : null;
+      data.validUntil = body.validUntil
+        ? keepOrRequireFuture(body.validUntil, proposal.validUntil, "validUntil")
+        : null;
     }
 
     const updated = await db.proposal.update({ where: { id }, data, include: { preparedBy: userPick } });
@@ -125,6 +127,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         leadId: proposal.leadId, actorId: user.id, verb: SALES_ACTIVITY.WON,
         summary: `Proposal v${proposal.version} accepted`, at: now,
       });
+      // Accepting a proposal wins the deal, so it must create the client too —
+      // otherwise the same event produces a client via one route and not the
+      // other. Idempotent, so a later Convert updates rather than duplicates.
+      try {
+        const { client, created } = await db.$transaction((tx) =>
+          syncWonLeadToClient(tx, proposal.leadId)
+        );
+        await logSalesActivity({
+          leadId: proposal.leadId, actorId: user.id, verb: SALES_ACTIVITY.CLIENT_CONVERTED,
+          summary: created ? `Client created: ${client.company}` : `Client updated: ${client.company}`,
+          meta: { clientId: client.id, auto: true, created }, at: now,
+        });
+      } catch (e) {
+        console.error("won-lead client sync failed", e);
+      }
     } else if (type === "REJECTED" && !["WON", "LOST"].includes(proposal.lead.stage)) {
       await db.lead.update({ where: { id: proposal.leadId }, data: { stage: "NEGOTIATION" } });
       await db.leadStageChange.create({
