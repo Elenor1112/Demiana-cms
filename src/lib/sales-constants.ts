@@ -58,19 +58,25 @@ export const LEAD_STAGE_ORDER: LeadStage[] = [
 ];
 
 /**
- * Columns on the Kanban board — the seven the brief specifies. CONTACTED,
- * MEETING_SCHEDULED and DORMANT are reachable from the lead detail view but do
- * not get their own column, which keeps the board readable on a laptop.
+ * Columns on the Kanban board — every stage, in lifecycle order.
+ *
+ * This must stay exhaustive over LeadStage: the board buckets leads by exact
+ * stage match, so any stage without a column would silently hide the leads
+ * sitting in it. CONTACTED, MEETING_SCHEDULED and DORMANT are all reachable
+ * from the lead dialog and the detail view, so they each need a home here.
  * Mirrors PIPELINE_STAGES in lib/sales.ts; kept here for client use.
  */
 export const PIPELINE_COLUMNS: LeadStage[] = [
   "NEW",
+  "CONTACTED",
   "QUALIFIED",
+  "MEETING_SCHEDULED",
   "DISCOVERY",
   "PROPOSAL",
   "NEGOTIATION",
   "WON",
   "LOST",
+  "DORMANT",
 ];
 
 export const LEAD_PRIORITY_META: Record<LeadPriority, { label: string; color: string }> = {

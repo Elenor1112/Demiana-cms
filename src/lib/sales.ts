@@ -153,17 +153,20 @@ export const OPEN_STAGES: LeadStage[] = [
   "DISCOVERY", "PROPOSAL", "NEGOTIATION",
 ];
 
-/** Stages shown as pipeline columns, in order. Excludes DORMANT and the
- *  intermediate CONTACTED / MEETING_SCHEDULED, which the board folds into their
- *  neighbours to keep seven readable columns. */
+/** Stages shown as pipeline columns, in lifecycle order. Exhaustive over
+ *  LeadStage so no lead can fall outside the board — see PIPELINE_COLUMNS in
+ *  lib/sales-constants.ts, which mirrors this for client use. */
 export const PIPELINE_STAGES: LeadStage[] = [
   "NEW",
+  "CONTACTED",
   "QUALIFIED",
+  "MEETING_SCHEDULED",
   "DISCOVERY",
   "PROPOSAL",
   "NEGOTIATION",
   "WON",
   "LOST",
+  "DORMANT",
 ];
 
 /**
