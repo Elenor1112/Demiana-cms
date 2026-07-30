@@ -246,6 +246,17 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Client.Create",
     "Client.Edit",
     "Task.Create",
+    // Owns work handoff as well as the pipeline: briefs the delivery teams for a
+    // deal and hands internal work to their own sales members. Task.EditDetails
+    // is what the PATCH route gates `assigneeIds` behind, so without it the role
+    // could only pick assignees at creation time and never reassign afterwards.
+    "Task.Assign",
+    "Task.Edit",
+    "Task.EditDetails",
+    // Reach to see (and therefore re-brief) their own department's tasks, not the
+    // whole agency — the same scoping the Art Director gets. Task.ViewAll stays
+    // with Operations / Account Management.
+    "Task.ViewDepartment",
     "Leave.Approve",
     "Permission.Approve",
     "Reports.View",
@@ -327,11 +338,22 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
  * Account Management briefs the Design Team directly — an Account Manager can
  * hand work to the Art Director or straight to a designer, rather than every
  * design task having to route through the Art Director first.
+ *
+ * The PR & Sales Manager gets the same delivery-team reach plus their own sales
+ * members: work that comes out of a deal (a pitch deck, launch content) is
+ * briefed directly, and internal sales work goes to the team they manage.
  */
 export const ASSIGNMENT_MATRIX: Partial<Record<RoleKey, RoleKey[]>> = {
   CEO: Object.keys(ROLE_META) as RoleKey[],
   OPERATIONS_MANAGER: Object.keys(ROLE_META) as RoleKey[],
   ACCOUNT_MANAGER: ["ART_DIRECTOR", "DESIGNER", "CONTENT_CREATOR", "COMMUNICATION_SPECIALIST"],
+  SALES_MANAGER: [
+    "SALES_MEMBER",
+    "ART_DIRECTOR",
+    "DESIGNER",
+    "CONTENT_CREATOR",
+    "COMMUNICATION_SPECIALIST",
+  ],
   ART_DIRECTOR: ["DESIGNER"],
 };
 
@@ -348,6 +370,7 @@ export const ASSIGNMENT_MATRIX: Partial<Record<RoleKey, RoleKey[]>> = {
  */
 export const ASSIGNABLE_DEPARTMENTS: Partial<Record<RoleKey, string[]>> = {
   ACCOUNT_MANAGER: ["Design Team"],
+  SALES_MANAGER: ["Design Team"],
   ART_DIRECTOR: ["Design Team"],
 };
 

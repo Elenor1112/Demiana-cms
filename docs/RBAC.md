@@ -42,9 +42,10 @@ Source of truth: [`src/lib/rbac.ts`](../src/lib/rbac.ts).
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Task.View | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Task.Create | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Task.Assign | ✅ | ✅ | ✅ | — | ✅ | — | — | — |
+| Task.Assign | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
 | Task.Approve | ✅ | ✅ | ✅ | — | ✅ | — | — | — |
-| Task.Edit | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — |
+| Task.Edit / Task.EditDetails | ✅ | ✅ | ✅ | ✅ | ✅ | ✅(Edit) | ✅(Edit) | — |
+| Task.ViewDepartment | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
 | Task.ChangeStatus | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Project.Create/Edit | ✅ | ✅ | ✅ | — | — | — | — | — |
 | Client.Create/Edit | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
@@ -91,9 +92,14 @@ Who may assign tasks **to** whom (a workflow constraint enforced in
 | Actor | May assign to |
 |---|---|
 | CEO / Operations Manager | Anyone |
-| Account Manager | Art Director, Content Creator, Communication Specialist |
-| Art Director | Designers only |
+| Account Manager | Art Director, Designer, Content Creator, Communication Specialist, + anyone in Design Team |
+| PR & Sales Manager | Sales Member, Art Director, Designer, Content Creator, Communication Specialist, + anyone in Design Team |
+| Art Director | Designers only, + anyone in Design Team |
 | Others | (cannot assign) |
+
+A user is assignable if they clear **either** the role matrix
+(`ASSIGNMENT_MATRIX`) **or** the department carve-out (`ASSIGNABLE_DEPARTMENTS`),
+so a new role added to the Design Team is briefable without a code change.
 
 ## Approval Routing
 
