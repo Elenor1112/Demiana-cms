@@ -9,6 +9,11 @@ import type { Prisma } from "@prisma/client";
 
 const userPick = { select: { id: true, firstName: true, lastName: true, avatarUrl: true } };
 
+/** Enough of the linked meeting to label it in the UI, without its full payload. */
+const meetingPick = {
+  select: { id: true, title: true, type: true, scheduledAt: true, status: true },
+};
+
 /**
  * The discovery brief is edited as a single upsert rather than created and then
  * patched: the form is one long page, saved as a draft repeatedly and finally
@@ -37,6 +42,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = briefSchema.parse(await req.json());
     const forceNew = req.nextUrl.searchParams.get("new") === "1";
     const now = new Date();
+
+    // A brief may only cite a meeting on its OWN lead. Checked here rather than
+    // trusted from the client, so a crafted meetingId cannot attach a brief to
+    // another lead's meeting.
+    if (body.meetingId) {
+      const meeting = await db.salesMeeting.findFirst({
+        where: { id: body.meetingId, leadId: id },
+        select: { id: true },
+      });
+      if (!meeting) throw new ApiError(400, "That meeting does not belong to this lead.");
+    }
 
     const existing = forceNew
       ? null
@@ -98,6 +114,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       successMetrics: body.successMetrics ?? [],
       metricsOther: body.metricsOther,
       additionalNotes: body.additionalNotes,
+      // Absent key means "leave the existing link alone"; an explicit null
+      // clears it. The Discovery tab does not send this field at all, so its
+      // draft saves must not wipe a link made from the Discovery page.
+      ...("meetingId" in body ? { meetingId: body.meetingId ?? null } : {}),
       ...(submitting ? { submittedById: user.id, submittedAt: now } : {}),
     };
 
@@ -106,9 +126,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           where: { id: existing.id },
           // leadId is immutable on update — stripping it keeps the type honest.
           data: { ...data, leadId: undefined },
-          include: { submittedBy: userPick },
+          include: { submittedBy: userPick, meeting: meetingPick },
         })
-      : await db.discoveryBrief.create({ data, include: { submittedBy: userPick } });
+      : await db.discoveryBrief.create({
+          data,
+          include: { submittedBy: userPick, meeting: meetingPick },
+        });
 
     // Submitting for the first time is what moves the lead into DISCOVERY.
     const firstSubmission = submitting && existing?.status !== "SUBMITTED";
@@ -163,6 +186,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       orderBy: { createdAt: "desc" },
       include: {
         submittedBy: userPick,
+        meeting: meetingPick,
         attachments: {
           select: {
             id: true, name: true, mimeType: true, size: true, isVoiceNote: true, createdAt: true,

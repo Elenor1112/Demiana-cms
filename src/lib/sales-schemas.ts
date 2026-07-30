@@ -252,6 +252,10 @@ export const requirementPatchSchema = z.object({
 
 export const briefSchema = z.object({
   status: z.enum(["DRAFT", "SUBMITTED"]).optional(),
+  // The meeting this brief came out of. Optional, and validated against the
+  // lead's own meetings by the route — a brief may not point at a meeting
+  // belonging to someone else's lead.
+  meetingId: z.string().min(1).optional().nullable(),
   // Company
   companyName: optionalText,
   brandName: optionalText,

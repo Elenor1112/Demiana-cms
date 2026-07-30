@@ -4,17 +4,21 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Search, ArrowRight, Paperclip } from "lucide-react";
+import { Search, ArrowRight, Paperclip, Plus, CalendarDays } from "lucide-react";
 import { apiGet } from "@/lib/fetcher";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/session-context";
 import {
-  EmptyState, CardGridSkeleton, StageBadge, formatRelative, type PersonRef,
+  EmptyState, CardGridSkeleton, StageBadge, formatRelative, formatDateTime, type PersonRef,
 } from "@/components/sales/sales-bits";
+import { BriefDialog } from "@/components/sales/brief-dialog";
+import { useSalesMeta } from "@/components/sales/use-sales-meta";
 import { BRIEF_STATUS_META } from "@/lib/sales-constants";
-import type { BriefStatus, LeadStage } from "@prisma/client";
+import type { BriefStatus, LeadStage, MeetingStatus } from "@prisma/client";
 
 type BriefRow = {
   id: string; status: BriefStatus; submittedAt: string | null;
@@ -23,13 +27,17 @@ type BriefRow = {
   marketingGoals: string[]; servicesRequested: string[]; successMetrics: string[];
   submittedBy: PersonRef | null;
   lead: { id: string; code: string; companyName: string; stage: LeadStage };
+  meeting: { id: string; title: string; scheduledAt: string; status: MeetingStatus } | null;
   _count: { attachments: number };
 };
 
 export function DiscoveryClient() {
   const params = useSearchParams();
+  const can = useCan();
+  const { data: meta } = useSalesMeta();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState(params.get("status") ?? "");
+  const [createOpen, setCreateOpen] = React.useState(false);
 
   const [debouncedQ, setDebouncedQ] = React.useState("");
   React.useEffect(() => {
@@ -66,11 +74,16 @@ export function DiscoveryClient() {
             <option key={k} value={k}>{m.label}</option>
           ))}
         </Select>
+        {can("Sales.DiscoverySubmit") && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" /> New brief
+          </Button>
+        )}
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Briefs are filled in from a lead. Open a lead and use its Discovery tab to
-        start or edit one.
+        Start a brief here against any lead and meeting, or open a lead and use
+        its Discovery tab for the full form.
       </p>
 
       {isLoading ? (
@@ -80,7 +93,7 @@ export function DiscoveryClient() {
           <EmptyState
             icon="ClipboardList"
             title="No discovery briefs yet"
-            description="Open a lead and fill in its Discovery tab to create the first one."
+            description="Use “New brief” to pick a lead and a meeting and write the first one."
           />
         </div>
       ) : (
@@ -108,6 +121,15 @@ export function DiscoveryClient() {
                       {BRIEF_STATUS_META[b.status].label}
                     </Badge>
                   </div>
+
+                  {b.meeting && (
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <CalendarDays className="size-3 shrink-0" />
+                      <span className="truncate">
+                        {b.meeting.title} · {formatDateTime(b.meeting.scheduledAt)}
+                      </span>
+                    </div>
+                  )}
 
                   {b.servicesRequested.length > 0 && (
                     <div className="mt-3">
@@ -157,6 +179,8 @@ export function DiscoveryClient() {
           ))}
         </div>
       )}
+
+      <BriefDialog open={createOpen} onClose={() => setCreateOpen(false)} meta={meta} />
     </div>
   );
 }

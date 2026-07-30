@@ -1252,6 +1252,8 @@ model SalesMeeting {
   /// A meeting cannot be marked COMPLETED until one of these exists â€” the rule
   /// is enforced in the API, and this relation is what it checks.
   feedback     SalesFeedback[]
+  /// Discovery briefs written off the back of this meeting.
+  briefs       DiscoveryBrief[]
 
   completedAt DateTime? @db.Timestamptz
   outcome     String?
@@ -1311,6 +1313,13 @@ model DiscoveryBrief {
   id     String @id @default(cuid())
   lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
   leadId String
+
+  // The meeting this brief came out of, when it came out of one. Optional
+  // because a brief can also be filled in from the lead's Discovery tab with no
+  // meeting to point at. SetNull rather than Cascade: deleting a meeting must
+  // never take the brief's content with it.
+  meeting   SalesMeeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  meetingId String?
 
   status BriefStatus @default(DRAFT)
 
@@ -1387,6 +1396,7 @@ model DiscoveryBrief {
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   @@index([leadId])
+  @@index([meetingId])
 }
 
 // â”€â”€ Sales feedback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

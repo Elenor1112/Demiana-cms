@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
         marketingGoals: true, servicesRequested: true, successMetrics: true,
         submittedBy: userPick,
         lead: { select: { id: true, code: true, companyName: true, stage: true } },
+        meeting: { select: { id: true, title: true, scheduledAt: true, status: true } },
         _count: { select: { attachments: true } },
       },
       orderBy: { updatedAt: "desc" },
