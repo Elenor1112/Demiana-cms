@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  X, Plus, Trash2, Send, CheckCircle2, Circle, GitBranch,
+  X, Plus, Trash2, Send, Check, CheckCircle2, Circle, GitBranch,
   Clock, MessageSquare, Activity as ActivityIcon, Building2, FolderKanban,
 } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/fetcher";
@@ -82,15 +82,35 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
     can(task?.workerId ? "Task.ChangeWorker" : "Task.AssignWorker") ||
     (can("Task.DelegateOwnTasks") && isAssignee);
 
-  // Candidate list is server-scoped (own department for delegators), so the
-  // dropdown can never offer someone the API would reject.
+  // Who is accountable can be changed after creation by the CEO, Operations
+  // Manager, PR & Sales Manager and Account Management. Separate from
+  // Task.EditDetails so an Art Director keeps title/deadline editing without
+  // gaining the ability to move accountability — mirrors the API's own gate.
+  const canEditAssignees = can("Task.EditAssignees");
+
+  // Candidate lists are server-scoped (own department for delegators, the
+  // assignment matrix for assignees), so neither picker can offer someone the
+  // API would reject.
   const { data: meta } = useQuery({
     queryKey: ["task-meta"],
-    queryFn: () => apiGet<{ workerCandidates: any[] }>("/api/tasks/meta"),
-    enabled: canSetWorker,
+    queryFn: () => apiGet<{ workerCandidates: any[]; assignable: any[] }>("/api/tasks/meta"),
+    enabled: canSetWorker || canEditAssignees,
     staleTime: 5 * 60_000,
   });
   const workerCandidates = meta?.workerCandidates ?? [];
+  const assignableUsers = meta?.assignable ?? [];
+
+  const assigneeIds: string[] = React.useMemo(
+    () => (task?.assignees ?? []).map((a: any) => a.user.id),
+    [task]
+  );
+
+  function toggleAssignee(userId: string) {
+    const next = assigneeIds.includes(userId)
+      ? assigneeIds.filter((id) => id !== userId)
+      : [...assigneeIds, userId];
+    patch.mutate({ assigneeIds: next });
+  }
 
   // Moving to In Progress without a worker prompts for one, which is the
   // delegation moment the workflow is built around.
@@ -224,8 +244,36 @@ function Panel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
                 </MetaRow>
                 {/* Assignees own the outcome; Worker does the work. Kept as two
                     rows so the distinction is visible at a glance. */}
-                <MetaRow label="Assignees">
-                  {task.assignees.length ? (
+                <MetaRow label="Assignees" wide={canEditAssignees && assignableUsers.length > 0}>
+                  {canEditAssignees && assignableUsers.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {assignableUsers.map((u: any) => {
+                        const active = assigneeIds.includes(u.id);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            disabled={patch.isPending}
+                            onClick={() => toggleAssignee(u.id)}
+                            title={u.jobTitle ? `${fullName(u)} · ${u.jobTitle}` : fullName(u)}
+                            className={`flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs transition-colors disabled:opacity-60 ${
+                              active
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <Avatar
+                              firstName={u.firstName}
+                              lastName={u.lastName}
+                              src={u.avatarUrl}
+                              size={20}
+                            />
+                            {u.firstName} {active && <Check className="size-3" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : task.assignees.length ? (
                     <AvatarGroup users={task.assignees.map((a: any) => a.user)} size={26} />
                   ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
                 </MetaRow>

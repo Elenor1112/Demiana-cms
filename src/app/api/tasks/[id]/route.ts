@@ -99,7 +99,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // through statuses, log progress and work the checklist.
     const PRIVILEGED_FIELDS = [
       "title", "description", "priority", "deadline",
-      "estimatedHours", "projectId", "departmentId", "assigneeIds", "labelIds",
+      "estimatedHours", "projectId", "departmentId", "labelIds",
     ] as const;
     const attempted = PRIVILEGED_FIELDS.filter((f) => data[f] !== undefined);
     if (attempted.length && !can(user, "Task.EditDetails")) {
@@ -107,6 +107,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         403,
         `You can update status, progress and the checklist, but not: ${attempted.join(", ")}.`
       );
+    }
+
+    // Assignees carry their own permission rather than riding on EditDetails:
+    // moving accountability off the person a task was handed to is a narrower
+    // decision than editing its title or deadline. Held by the CEO, Operations
+    // Manager, PR & Sales Manager and Account Management — an Art Director can
+    // edit their department's tasks but not reassign them.
+    const changingAssignees =
+      data.assigneeIds !== undefined &&
+      (data.assigneeIds.length !== before.assignees.length ||
+        data.assigneeIds.some((uid) => !before.assignees.some((a) => a.userId === uid)));
+    if (changingAssignees && !can(user, "Task.EditAssignees")) {
+      throw new ApiError(403, "You are not allowed to change who this task is assigned to.");
     }
 
     // Status belongs to the person doing the work. Everyone else — managers,
@@ -260,8 +273,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
-    // reconcile assignees
-    if (data.assigneeIds) {
+    // reconcile assignees — only when the set actually differs, so resubmitting
+    // an unchanged list doesn't churn the rows or log a phantom "reassigned".
+    if (data.assigneeIds && changingAssignees) {
       await db.taskAssignee.deleteMany({ where: { taskId: id } });
       await db.taskAssignee.createMany({ data: data.assigneeIds.map((userId) => ({ taskId: id, userId })) });
       const added = data.assigneeIds.filter((uid) => !before.assignees.some((a) => a.userId === uid));

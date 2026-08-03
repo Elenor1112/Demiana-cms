@@ -20,6 +20,13 @@ export const PERMISSIONS = {
   "Task.EditDetails": "Edit task priority, deadline, title & description",
   "Task.Delete": "Delete tasks",
   "Task.Assign": "Assign tasks to others",
+  // Deliberately separate from Task.EditDetails: changing WHO is accountable for
+  // a task after it exists is an ownership decision, not an editing one, and is
+  // held by fewer roles. An Art Director can retitle and re-deadline their
+  // department's work (Task.EditDetails) but cannot move accountability off the
+  // person it was handed to — that stays with CEO, Operations Manager, PR &
+  // Sales Manager and Account Management.
+  "Task.EditAssignees": "Change a task's assignees after it has been created",
   "Task.Approve": "Approve tasks / content / designs",
   "Task.ChangeStatus": "Change task status",
   // Worker = who executes, as opposed to assignees, who stay accountable.
@@ -207,6 +214,11 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Task.EditDetails",
     "Task.ViewAll",
     "Task.Assign",
+    // Owns task assignment (see the role description), so it can also change who
+    // is accountable after the task exists — not only at creation time, and can
+    // retire work that should no longer be tracked.
+    "Task.EditAssignees",
+    "Task.Delete",
     "Task.Approve",
     // Can set and change the worker on any task it can see, for the cases where
     // Account Management needs to redirect execution itself.
@@ -247,10 +259,12 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     "Client.Edit",
     "Task.Create",
     // Owns work handoff as well as the pipeline: briefs the delivery teams for a
-    // deal and hands internal work to their own sales members. Task.EditDetails
+    // deal and hands internal work to their own sales members. Task.EditAssignees
     // is what the PATCH route gates `assigneeIds` behind, so without it the role
     // could only pick assignees at creation time and never reassign afterwards.
     "Task.Assign",
+    "Task.EditAssignees",
+    "Task.Delete",
     "Task.Edit",
     "Task.EditDetails",
     // Reach to see (and therefore re-brief) their own department's tasks, not the
