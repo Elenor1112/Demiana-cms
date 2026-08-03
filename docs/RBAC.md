@@ -93,13 +93,19 @@ Who may assign tasks **to** whom (a workflow constraint enforced in
 |---|---|
 | CEO / Operations Manager | Anyone |
 | Account Manager | Art Director, Designer, Content Creator, Communication Specialist, + anyone in Design Team |
-| PR & Sales Manager | Sales Member, Art Director, Designer, Content Creator, Communication Specialist, + anyone in Design Team |
+| PR & Sales Manager | CEO, Operations Manager, Account Manager, Sales Member, Art Director, Designer, Content Creator, Communication Specialist, + anyone in Design Team |
 | Art Director | Designers only, + anyone in Design Team |
 | Others | (cannot assign) |
 
 A user is assignable if they clear **either** the role matrix
 (`ASSIGNMENT_MATRIX`) **or** the department carve-out (`ASSIGNABLE_DEPARTMENTS`),
 so a new role added to the Design Team is briefable without a code change.
+
+The PR & Sales Manager is the one actor below level 1 that assigns **upward**
+(CEO, Operations Manager, Account Manager). A live deal produces work for those
+roles — approve a quote, make an introduction, sign off on scope — and this
+keeps it tracked in the system. The reach is task assignment only: it grants no
+visibility, approval or edit rights over those roles anywhere else.
 
 ## Approval Routing
 

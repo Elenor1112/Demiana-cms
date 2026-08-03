@@ -341,13 +341,26 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
  *
  * The PR & Sales Manager gets the same delivery-team reach plus their own sales
  * members: work that comes out of a deal (a pitch deck, launch content) is
- * briefed directly, and internal sales work goes to the team they manage.
+ * briefed directly, and internal sales work goes to the team they manage. They
+ * additionally reach UPWARD to the CEO, Operations Manager and Account Manager,
+ * because a live deal generates work for those roles (approve this quote,
+ * introduce me to this contact) that has to be tracked like any other task.
+ * This is the only actor below level 1 with upward reach, and it is scoped to
+ * task assignment alone.
  */
 export const ASSIGNMENT_MATRIX: Partial<Record<RoleKey, RoleKey[]>> = {
   CEO: Object.keys(ROLE_META) as RoleKey[],
   OPERATIONS_MANAGER: Object.keys(ROLE_META) as RoleKey[],
   ACCOUNT_MANAGER: ["ART_DIRECTOR", "DESIGNER", "CONTENT_CREATOR", "COMMUNICATION_SPECIALIST"],
   SALES_MANAGER: [
+    // Upward reach is deliberate: a deal in the pipeline routinely needs
+    // something from leadership or the account owner — an approval, a pricing
+    // call, a client introduction — and the PR & Sales Manager books that as a
+    // task rather than chasing it off-system. Assigning upward hands over the
+    // work item only; it confers no permission over those roles anywhere else.
+    "CEO",
+    "OPERATIONS_MANAGER",
+    "ACCOUNT_MANAGER",
     "SALES_MEMBER",
     "ART_DIRECTOR",
     "DESIGNER",
