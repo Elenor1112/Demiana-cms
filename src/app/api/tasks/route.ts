@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const createdBy = sp.get("createdBy");
     const mine = sp.get("mine");
 
-    const openStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"];
+    const openStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "EDITING"];
     const closedStatuses: TaskStatus[] = ["DONE", "CANCELLED"];
 
     // Scope to what this user is allowed to see before any other filter.
@@ -91,7 +91,7 @@ const createSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
-  status: z.enum(["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "DONE", "CANCELLED"]).default("TODO"),
+  status: z.enum(["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "EDITING", "DONE", "CANCELLED"]).default("TODO"),
   projectId: z.string().optional().nullable(),
   /**
    * Only honoured for tasks with NO project — a project's client always wins.

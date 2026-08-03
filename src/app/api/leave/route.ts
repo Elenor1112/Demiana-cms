@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     // active tasks warning
     const activeTasks = await db.task.count({
-      where: { assignees: { some: { userId: user.id } }, status: { in: ["TODO", "IN_PROGRESS", "WAITING_APPROVAL"] } },
+      where: { assignees: { some: { userId: user.id } }, status: { in: ["TODO", "IN_PROGRESS", "WAITING_APPROVAL", "EDITING"] } },
     });
     if (activeTasks > 0) warnings.push(`You have ${activeTasks} active task(s). Ensure they are handed over.`);
 

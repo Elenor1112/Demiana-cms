@@ -8,6 +8,7 @@ export const TASK_STATUS_META: Record<
   IN_PROGRESS: { label: "In Progress", color: "#0EA5E9", bg: "#E0F2FE", group: "open" },
   HOLD: { label: "Hold", color: "#F59E0B", bg: "#FEF3C7", group: "open" },
   WAITING_APPROVAL: { label: "Waiting Approval", color: "#8B5CF6", bg: "#EDE9FE", group: "open" },
+  EDITING: { label: "Editing", color: "#EC4899", bg: "#FCE7F3", group: "open" },
   DONE: { label: "Done", color: "#22C55E", bg: "#DCFCE7", group: "closed" },
   CANCELLED: { label: "Cancelled", color: "#EF4444", bg: "#FEE2E2", group: "closed" },
 };
@@ -17,6 +18,7 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
   "IN_PROGRESS",
   "HOLD",
   "WAITING_APPROVAL",
+  "EDITING",
   "DONE",
   "CANCELLED",
 ];

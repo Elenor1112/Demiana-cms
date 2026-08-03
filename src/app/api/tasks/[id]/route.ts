@@ -64,7 +64,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 const updateSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional().nullable(),
-  status: z.enum(["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "DONE", "CANCELLED"]).optional(),
+  status: z.enum(["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "EDITING", "DONE", "CANCELLED"]).optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
   progress: z.number().int().min(0).max(100).optional(),
   deadline: z.string().optional().nullable(),

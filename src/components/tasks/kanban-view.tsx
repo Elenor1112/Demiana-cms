@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { apiSend } from "@/lib/fetcher";
 import { TASK_STATUS_META, TASK_STATUS_ORDER } from "@/lib/constants";
@@ -55,6 +56,34 @@ export function KanbanView({
     onSettled: () => qc.invalidateQueries({ queryKey }),
   });
 
+  // Horizontal paging for the column strip. With seven statuses the board
+  // overflows on most screens, so the arrows step one column (288px + 12px gap)
+  // at a time and disable once that edge is reached.
+  const stripRef = React.useRef<HTMLDivElement>(null);
+  const [atStart, setAtStart] = React.useState(true);
+  const [atEnd, setAtEnd] = React.useState(false);
+
+  const syncArrows = React.useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    // 1px slack absorbs sub-pixel scroll positions from fractional widths.
+    setAtStart(el.scrollLeft <= 1);
+    setAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 1);
+  }, []);
+
+  React.useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    syncArrows();
+    const ro = new ResizeObserver(syncArrows);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [syncArrows]);
+
+  function scrollBy(dir: -1 | 1) {
+    stripRef.current?.scrollBy({ left: dir * 300, behavior: "smooth" });
+  }
+
   function onDrop(status: TaskStatus) {
     if (dragId) {
       const task = tasks.find((t) => t.id === dragId);
@@ -67,7 +96,11 @@ export function KanbanView({
   }
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
+    <div className="relative">
+      <NavArrow side="left" disabled={atStart} onClick={() => scrollBy(-1)} />
+      <NavArrow side="right" disabled={atEnd} onClick={() => scrollBy(1)} />
+
+      <div ref={stripRef} onScroll={syncArrows} className="flex gap-3 overflow-x-auto pb-4">
       {TASK_STATUS_ORDER.map((status) => {
         const meta = TASK_STATUS_META[status];
         const colTasks = tasks.filter((t) => t.status === status);
@@ -114,6 +147,37 @@ export function KanbanView({
           </div>
         );
       })}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Floating scroll control for the column strip. Sits over the board edge rather
+ * than in the flow so adding it does not shrink the columns, and hides itself at
+ * the corresponding end so there is no dead button to click.
+ */
+function NavArrow({
+  side,
+  disabled,
+  onClick,
+}: {
+  side: "left" | "right";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = side === "left" ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={side === "left" ? "Scroll to previous statuses" : "Scroll to next statuses"}
+      className={`absolute top-4 z-10 grid size-8 place-items-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-opacity hover:text-foreground ${
+        side === "left" ? "-left-3" : "-right-3"
+      } ${disabled ? "pointer-events-none opacity-0" : "opacity-100"}`}
+    >
+      <Icon className="size-4" />
+    </button>
   );
 }

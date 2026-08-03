@@ -26,11 +26,11 @@ export async function GET() {
       statusGroups, deptGroups, priorityGroups, clientGroups,
     ] = await Promise.all([
       db.task.count(),
-      db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"] } } }),
+      db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "EDITING"] } } }),
       db.task.count({ where: { status: "DONE", updatedAt: { gte: monthStart } } }),
       // A date-only deadline stores local midnight and means "end of that day",
       // so anything from today onwards is not yet overdue.
-      db.task.count({ where: { deadline: { lt: todayStart }, status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL"] } } }),
+      db.task.count({ where: { deadline: { lt: todayStart }, status: { in: ["TODO", "IN_PROGRESS", "HOLD", "WAITING_APPROVAL", "EDITING"] } } }),
       db.user.count({ where: { status: "ACTIVE" } }),
       db.project.count({ where: { status: "ACTIVE" } }),
       db.client.count({ where: { status: "ACTIVE" } }),
@@ -92,7 +92,7 @@ export async function GET() {
 
     // upcoming deadlines
     const upcoming = await db.task.findMany({
-      where: { deadline: { gte: now }, status: { in: ["TODO", "IN_PROGRESS", "WAITING_APPROVAL"] } },
+      where: { deadline: { gte: now }, status: { in: ["TODO", "IN_PROGRESS", "WAITING_APPROVAL", "EDITING"] } },
       orderBy: { deadline: "asc" },
       take: 6,
       select: {
